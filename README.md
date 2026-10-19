@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="#live-demo"><b>Live demo</b></a> ·
-  <a href="SecureOps_AI_Documentation.pdf"><b>Plain-language guide (PDF)</b></a> ·
   <a href="reports/EVALUATION.md"><b>Evaluation report</b></a> ·
   <a href="DEPLOY.md"><b>Deployment guide</b></a>
 </p>
@@ -130,7 +129,6 @@ Step-by-step instructions are in **[DEPLOY.md](DEPLOY.md)**.
 ```bash
 pytest -q                                          # 21 tests on real Zeek/Suricata samples, no network needed
 python -m secureops.evaluate --llm-sample 20       # reproduce reports/ (LLM sample needs GROQ_API_KEY)
-python docs/build_documentation.py                 # rebuild the PDF guide from the latest results
 ```
 
 CI (GitHub Actions) runs lint, the test suite, the full evaluation, a Docker build and a sensor-kit config check on every push.

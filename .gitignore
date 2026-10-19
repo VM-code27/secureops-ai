@@ -10,3 +10,7 @@ data/
 .env
 sensor/.env
 sensor/logs/
+
+# Local-only documentation
+SecureOps_AI_Documentation.pdf
+docs/build_documentation.py
