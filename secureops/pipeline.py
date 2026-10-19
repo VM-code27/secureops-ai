@@ -73,11 +73,11 @@ def _max_rule_window() -> pd.Timedelta:
 
 
 # ------------------------------------------------------------------ ingest
-def ingest(events: pd.DataFrame, use_llm: bool = False, software=None) -> dict:
+def ingest(events: pd.DataFrame, use_llm: bool = False, software=None, wait: int = 600) -> dict:
     """Store a batch of normalised events and run the whole pipeline on it. Replayed datasets may
     carry label_tactic / label_technique columns: they go to the separate labels table only.
     Serialised with a database lock: sensors, API workers and dashboard sessions may call it at once."""
-    with db.lock("pipeline"):
+    with db.lock("pipeline", wait=wait):
         result = _ingest(events, use_llm, software)
         _maybe_purge()
         return result

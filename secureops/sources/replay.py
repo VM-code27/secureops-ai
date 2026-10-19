@@ -21,35 +21,39 @@ def _save(**kw):
     db.set_meta("replay", st)
 
 
-def advance(to: pd.Timestamp, chunk: pd.Timedelta = pd.Timedelta(hours=6), progress=None, use_llm=False) -> dict:
-    """Ingest replay events from the cursor up to `to`, in chunks (under the pipeline lock, so two
-    viewers streaming at once can never replay the same slice twice)."""
-    with db.lock("pipeline"):
-        return _advance(to, chunk, progress, use_llm)
+def advance(to: pd.Timestamp, chunk: pd.Timedelta = pd.Timedelta(hours=6), progress=None, use_llm=False,
+            wait: int = 600) -> dict:
+    """Ingest replay events from the cursor up to `to`, one chunk at a time. Each chunk takes the
+    pipeline lock and re-reads the cursor inside it, so concurrent viewers never replay a slice twice,
+    and sensor uploads can interleave between chunks instead of waiting for the whole replay."""
+    import time
 
-
-def _advance(to, chunk, progress, use_llm) -> dict:
+    from ..pipeline import ingest
     ev = uwf.load()
-    st = state()
-    cursor = pd.Timestamp(st["cursor"]) if st.get("cursor") else ev.ts.min().floor("D")
     end = min(to, ev.ts.max() + pd.Timedelta(seconds=1))
     total = {"events": 0, "alerts": 0, "new_incidents": [], "updated_incidents": [], "rules": {}}
-    from ..pipeline import ingest
-    while cursor < end:
-        nxt = min(cursor + chunk, end)
-        batch = ev[(ev.ts >= cursor) & (ev.ts < nxt)]
-        if progress and len(batch):
-            progress(f"Replaying {cursor:%Y-%m-%d %H:%M} -> {nxt:%H:%M} UTC ({len(batch):,} events)")
-        if len(batch):
-            r = ingest(batch.copy(), use_llm=use_llm)
-            total["events"] += r["events"]
-            total["alerts"] += r["alerts"]
-            total["new_incidents"] += r["new_incidents"]
-            total["updated_incidents"] = sorted(set(total["updated_incidents"]) | set(r["updated_incidents"]))
-            for k, v in r["rules"].items():
-                total["rules"][k] = total["rules"].get(k, 0) + v
-        cursor = nxt
-        _save(cursor=cursor, start=ev.ts.min(), end=ev.ts.max(), dataset=uwf.SENSOR)
+    cursor = None
+    while True:
+        with db.lock("pipeline", wait=wait):
+            st = state()
+            cursor = pd.Timestamp(st["cursor"]) if st.get("cursor") else ev.ts.min().floor("D")
+            if cursor >= end:
+                break
+            nxt = min(cursor + chunk, end)
+            batch = ev[(ev.ts >= cursor) & (ev.ts < nxt)]
+            if progress and len(batch):
+                progress(f"Replaying {cursor:%Y-%m-%d %H:%M} -> {nxt:%H:%M} UTC ({len(batch):,} events)")
+            if len(batch):
+                r = ingest(batch.copy(), use_llm=use_llm)
+                total["events"] += r["events"]
+                total["alerts"] += r["alerts"]
+                total["new_incidents"] += r["new_incidents"]
+                total["updated_incidents"] = sorted(set(total["updated_incidents"]) | set(r["updated_incidents"]))
+                for k, v in r["rules"].items():
+                    total["rules"][k] = total["rules"].get(k, 0) + v
+            _save(cursor=nxt, start=ev.ts.min(), end=ev.ts.max(), dataset=uwf.SENSOR)
+            cursor = nxt
+        time.sleep(0.3)  # let waiting writers (sensor uploads) take the lock between chunks
     total["cursor"] = cursor
     total["finished"] = cursor >= ev.ts.max()
     return total
@@ -62,21 +66,18 @@ def bootstrap(progress=None) -> dict:
 
 
 def step(minutes: int | None = None, use_llm=False, wait: int = 600) -> dict:
-    with db.lock("pipeline", wait=wait):
-        return _step(minutes, use_llm)
-
-
-def _step(minutes: int | None, use_llm) -> dict:
     minutes = minutes or settings.section("replay")["step_minutes"]
-    st = state()
-    cursor = pd.Timestamp(st["cursor"]) if st.get("cursor") else uwf.load().ts.min().floor("D")
-    # Skip empty stretches (the dataset has gaps between capture days) so the stream never stalls.
     ev = uwf.load()
-    nxt_ev = ev.ts[ev.ts >= cursor]
-    if len(nxt_ev) and nxt_ev.iloc[0] > cursor + pd.Timedelta(minutes=minutes):
-        cursor = nxt_ev.iloc[0].floor("min")
-        _save(cursor=cursor)
-    return advance(cursor + pd.Timedelta(minutes=minutes), chunk=pd.Timedelta(minutes=minutes), use_llm=use_llm)
+    with db.lock("pipeline", wait=wait):
+        st = state()
+        cursor = pd.Timestamp(st["cursor"]) if st.get("cursor") else ev.ts.min().floor("D")
+        # Skip empty stretches (the dataset has gaps between capture days) so the stream never stalls.
+        nxt_ev = ev.ts[ev.ts >= cursor]
+        if len(nxt_ev) and nxt_ev.iloc[0] > cursor + pd.Timedelta(minutes=minutes):
+            cursor = nxt_ev.iloc[0].floor("min")
+            _save(cursor=cursor)
+    return advance(cursor + pd.Timedelta(minutes=minutes), chunk=pd.Timedelta(minutes=minutes), use_llm=use_llm,
+                   wait=wait)
 
 
 def summary() -> dict:

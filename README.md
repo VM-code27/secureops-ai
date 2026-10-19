@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#live-demo"><b>Live demo</b></a> ·
+  <a href="https://secureops-ai.streamlit.app/"><b>Live demo</b></a> ·
   <a href="reports/EVALUATION.md"><b>Evaluation report</b></a> ·
   <a href="DEPLOY.md"><b>Deployment guide</b></a>
 </p>
@@ -34,7 +34,9 @@ Security teams drown in alerts. **SecureOps AI** is an end-to-end security opera
 
 ## Live demo
 
-**▶ `https://<your-app>.streamlit.app`** · REST API docs: `https://<your-api>.onrender.com/docs`
+**▶ [secureops-ai.streamlit.app](https://secureops-ai.streamlit.app/)** · REST API: [secureops-api-mpr1.onrender.com/docs](https://secureops-api-mpr1.onrender.com/docs) *(token-protected)*
+
+> Hosted on free tiers: if the app has been idle it may take about a minute to wake up.
 
 | Live threat stream | Ask in plain English, answers cited |
 |---|---|

@@ -100,6 +100,10 @@ def main(once: bool = False):
     while True:
         try:
             ship_once(state)
+        except requests.HTTPError as exc:
+            code = exc.response.status_code if exc.response is not None else "?"
+            msg = "API busy" if code == 503 else "API waking up or restarting" if code in (502, 504) else f"HTTP {code}"
+            print(f"{msg}; will retry (nothing is lost)", flush=True)
         except requests.RequestException as exc:
             print(f"API unreachable ({exc.__class__.__name__}); retrying", flush=True)
         if once:

@@ -35,3 +35,16 @@ def test_api_flow(seeded_db):
         r = c.post("/assets/inventory", content=csv, headers=H)
         assert r.json()["assets_updated"] == 1
         assert [a for a in c.get("/assets", headers=H).json() if a["ip"] == "10.47.3.155"][0]["criticality_source"] == "inventory"
+
+
+def test_busy_pipeline_returns_503_not_a_hang(seeded_db, monkeypatch):
+    from secureops import pipeline
+
+    def busy(*a, **k):
+        raise TimeoutError("pipeline lock held")
+
+    monkeypatch.setattr(pipeline, "ingest", busy)
+    with TestClient(app) as c:
+        r = c.post("/ingest/zeek?filename=conn.log", content=fixture_text("zeek_conn.log"), headers=H)
+        assert r.status_code == 503 and r.headers["retry-after"] == "15"
+        assert c.get("/health").status_code == 200

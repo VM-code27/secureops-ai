@@ -16,6 +16,7 @@ from typing import Literal
 import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from secureops import __version__, assets, bootstrap, config, db, pipeline, settings
 from secureops.intel import feeds
@@ -121,19 +122,29 @@ def explain(incident_id: str, use_llm: bool = True):
 
 
 # ------------------------------------------------------------------ ingest (sensors)
+async def _ingest(events, software=None) -> dict:
+    """Run the pipeline in a worker thread (never block the event loop, so /health stays up). If the
+    pipeline is busy (e.g. the dashboard is replaying), answer 503 quickly; sensors retry later and
+    lose nothing, because the shipper only advances after a successful upload."""
+    try:
+        return await run_in_threadpool(pipeline.ingest, events, software=software, wait=20)
+    except TimeoutError:
+        raise HTTPException(503, "Pipeline busy - retry shortly.", headers={"Retry-After": "15"})
 @app.post("/ingest/zeek", dependencies=[Depends(require_token)])
 async def ingest_zeek(request: Request, sensor: str = "sensor", filename: str = ""):
     """Body: raw Zeek log text (TSV with #fields header, or JSON lines) - conn, ssh or software."""
-    parsed = zeek.parse((await request.body()).decode("utf-8", errors="replace"), filename, sensor=sensor)
-    res = pipeline.ingest(parsed["events"], software=parsed["software"])
+    body = (await request.body()).decode("utf-8", errors="replace")
+    parsed = await run_in_threadpool(zeek.parse, body, filename, sensor=sensor)
+    res = await _ingest(parsed["events"], software=parsed["software"])
     return {"log": parsed["path"], "rows": parsed["rows"], **res}
 
 
 @app.post("/ingest/suricata", dependencies=[Depends(require_token)])
 async def ingest_suricata(request: Request, sensor: str = "sensor"):
     """Body: Suricata eve.json lines (alert and flow events are used)."""
-    parsed = suricata.parse((await request.body()).decode("utf-8", errors="replace"), sensor=sensor)
-    res = pipeline.ingest(parsed["events"])
+    body = (await request.body()).decode("utf-8", errors="replace")
+    parsed = await run_in_threadpool(suricata.parse, body, sensor=sensor)
+    res = await _ingest(parsed["events"])
     return {"alerts_in_file": parsed["alerts"], "flows_in_file": parsed["flows"], **res}
 
 
