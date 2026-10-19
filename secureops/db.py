@@ -350,7 +350,10 @@ def read_events_sql(sql: str, params: dict | None = None) -> pd.DataFrame:
     return pd.read_sql_query(text(sql), engine(), params=params or {})
 
 
-def events_between(start, end) -> pd.DataFrame:
+def events_between(start, end, dataset: str | None = None) -> pd.DataFrame:
+    if dataset:
+        return read_events("WHERE dataset = :d AND ts >= :a AND ts < :b ORDER BY ts",
+                           {"d": dataset, "a": py(start), "b": py(end)})
     return read_events("WHERE ts >= :a AND ts < :b ORDER BY ts", {"a": py(start), "b": py(end)})
 
 

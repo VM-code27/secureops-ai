@@ -63,13 +63,15 @@ def retrain_model() -> dict:
     _model.clear()
     db.set_meta("anomaly_model_blob", None)
     db.set_meta("anomaly_model", None)
-    db.set_meta("anomaly_scored_until", None)
+    for d in ("replay", "live"):
+        db.set_meta(f"anomaly_scored_until:{d}", None)
     return {"trained": get_model() is not None, "meta": db.get_meta("anomaly_model")}
 
 
 def _max_rule_window() -> pd.Timedelta:
     d = settings.section("detection")
-    return max(pd.Timedelta(d[k]["window"]) for k in ("scan", "bruteforce", "ssh_bruteforce", "lateral")) * 6
+    # Rules only need their own trailing window; a little margin covers batch boundaries.
+    return max(pd.Timedelta(d[k]["window"]) for k in ("scan", "bruteforce", "ssh_bruteforce", "lateral")) * 1.5
 
 
 # ------------------------------------------------------------------ ingest
@@ -113,19 +115,26 @@ def _ingest(events: pd.DataFrame, use_llm: bool, software) -> dict:
         assets.add_software(software)
 
     batch_start, batch_end = events.ts.min(), events.ts.max()
-    ctx = pd.concat([db.events_between(batch_start - _max_rule_window(), batch_start), events], ignore_index=True)
+    dataset = events.dataset.iloc[0]
+    # Context = recent events from the SAME source only (replay timestamps are from 2024, sensors' are now).
+    ctx = pd.concat([db.events_between(batch_start - _max_rule_window(), batch_start, dataset), events],
+                    ignore_index=True)
     ctx = ctx.drop_duplicates("event_id").sort_values("ts", kind="stable").reset_index(drop=True)
     found = [a for a in detect_rules(ctx) if a["last_ts"] >= batch_start]
 
     model = get_model()
     if model is not None:
-        done = db.get_meta("anomaly_scored_until")
-        lo = pd.Timestamp(done) if done else db.time_range()[0].floor("h")
+        # One scoring bookmark per source, and never catch up more than 48 h in one go, so a source
+        # with old timestamps (the replay) can never make a live batch rescan the whole database.
+        key = f"anomaly_scored_until:{dataset}"
+        done = db.get_meta(key)
         hi = batch_end.floor("h")
+        lo = pd.Timestamp(done) if done else batch_start.floor("h")
+        lo = max(lo, hi - pd.Timedelta(hours=48))
         if hi > lo:
-            win = db.events_between(lo, hi)
+            win = db.events_between(lo, hi, dataset)
             found += model.detect(win, hours=set(pd.date_range(lo, hi, freq="h", inclusive="left")))
-            db.set_meta("anomaly_scored_until", hi)
+            db.set_meta(key, hi)
 
     alerts = pd.DataFrame(found)
     if alerts.empty:
@@ -170,6 +179,16 @@ def _ingest(events: pd.DataFrame, use_llm: bool, software) -> dict:
     return summary
 
 
+def cited_events(alerts: pd.DataFrame) -> list[int]:
+    """The event IDs an explanation can cite (first, strongest and last alert per rule), so a huge,
+    long-running incident never loads tens of thousands of events just to be re-explained."""
+    ids: set = set()
+    for _, g in alerts.sort_values("ts").groupby("rule_id", sort=False):
+        for _, a in pd.concat([g.head(1), g.sort_values("confidence").tail(1), g.tail(1)]).iterrows():
+            ids.update(list(a.evidence)[:2] + list(a.evidence)[-1:])
+    return sorted(ids)
+
+
 def rebuild_incident(inc_id: str, new_alerts: int = 0, use_llm: bool = False):
     """(Re)compute an incident from all of its alerts, keeping the analyst's case fields."""
     g = db.read_alerts(inc_id)
@@ -186,7 +205,7 @@ def rebuild_incident(inc_id: str, new_alerts: int = 0, use_llm: bool = False):
                    acknowledged_at=None, resolved_at=None, resolution="", false_positive=False)
     else:
         row["sla_due"] = min(cur["sla_due"], cur["created_at"] + timedelta(hours=sc["sla_hours"]))
-    ex = assistant.explain(row, g, db.events_by_ids(ev_ids), use_llm=use_llm)
+    ex = assistant.explain(row, g, db.events_by_ids(cited_events(g)), use_llm=use_llm)
     row.update(ai_summary=ex["text"], ai_mode=ex["mode"], ai_support=ex["support_rate"], ai_checks=ex["checks"])
     db.upsert_incident(row)
     if cur is None:
@@ -200,8 +219,7 @@ def rebuild_incident(inc_id: str, new_alerts: int = 0, use_llm: bool = False):
 def regenerate_explanation(incident_id: str, use_llm: bool = True) -> dict:
     inc = db.get_incident(incident_id)
     alerts = db.read_alerts(incident_id)
-    events = db.events_by_ids([e for es in alerts.evidence for e in es])
-    ex = assistant.explain(inc, alerts, events, use_llm=use_llm)
+    ex = assistant.explain(inc, alerts, db.events_by_ids(cited_events(alerts)), use_llm=use_llm)
     db.upsert_incident({"incident_id": incident_id, "ai_summary": ex["text"], "ai_mode": ex["mode"],
                         "ai_support": ex["support_rate"], "ai_checks": ex["checks"]})
     db.audit(incident_id, "ai_explanation", f"mode={ex['mode']} support={ex['support_rate']:.0%} {ex['note']}".strip(),

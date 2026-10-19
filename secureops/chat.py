@@ -106,7 +106,8 @@ def retrieve(question: str, focus: str | None = None) -> tuple[list[dict], str |
         if focus not in {x["id"] for x in items}:
             items.append(_incident_item(i))
         al = db.read_alerts(focus)
-        ev = db.events_by_ids({e for es in al.evidence for e in es})
+        from .pipeline import cited_events
+        ev = db.events_by_ids(cited_events(al))
         items += [c for c in assistant.build_context(i, al, ev) if c["id"] not in {x["id"] for x in items}]
     elif len(items) == 1:  # nothing matched: give the most important open incidents
         top = inc[~inc.status.isin(["Resolved", "False positive"])].head(6)

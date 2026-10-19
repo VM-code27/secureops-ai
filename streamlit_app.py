@@ -450,7 +450,8 @@ def attack_graph(alerts: pd.DataFrame, ents: dict) -> str:
 def incident_panel(inc_id: str):
     inc = db.get_incident(inc_id)
     al = db.read_alerts(inc_id)
-    ev = db.events_by_ids({e for es in al.evidence for e in es})
+    # Evidence of the 50 most recent alerts (bounded, even for incidents with thousands of alerts).
+    ev = db.events_by_ids({e for es in al.sort_values('ts').tail(50).evidence for e in es})
     sc = inc["scoring"]
     st.markdown(f"<div class='card'>{pill(inc['severity'])} <span class='feed-meta'>&nbsp;{inc_id} · score "
                 f"{inc['score']:.0f}/100 · {inc['status']} · owner {inc['owner']} · SLA {fmt_delta(inc['sla_due'] - db.now())}"
