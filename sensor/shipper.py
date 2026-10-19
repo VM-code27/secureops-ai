@@ -19,7 +19,7 @@ SENSOR = os.environ.get("SENSOR_NAME", "sensor")
 LOG_DIR = Path(os.environ.get("LOG_DIR", "logs"))
 STATE = Path(os.environ.get("STATE_FILE", "shipper_state.json"))
 INTERVAL = float(os.environ.get("INTERVAL", "10"))
-MAX_LINES = 5000
+MAX_LINES = int(os.environ.get("MAX_LINES", "1000"))  # small batches keep a 512 MB API instance comfortable
 
 # (relative path, endpoint, extra query params)
 SOURCES = [("zeek/conn.log", "/ingest/zeek", {"filename": "conn.log"}),
