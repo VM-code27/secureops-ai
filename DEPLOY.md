@@ -46,7 +46,6 @@ The sensor pushes logs to the API, and the API writes them to the same Neon data
    - Optionally set `GROQ_API_KEY`.
    - Check that `https://<name>.onrender.com/health` responds. Interactive docs are at `/docs`.
    - The free tier sleeps after 15 minutes idle. The sensor's next push wakes it, and the shipper retries automatically.
-2. Add `API_PUBLIC_URL = "https://<name>.onrender.com"` to the Streamlit secrets so the dashboard shows the right instructions.
 3. **Sensor** (any Linux machine, Raspberry Pi 4/5, or WSL2 on Windows with Docker):
    ```bash
    git clone https://github.com/<you>/secureops-ai.git && cd secureops-ai/sensor

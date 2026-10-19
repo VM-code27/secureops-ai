@@ -15,7 +15,7 @@ import streamlit as st
 # Streamlit Cloud secrets -> environment (before importing the package).
 try:
     for _k in ("GROQ_API_KEY", "GROQ_MODEL", "OLLAMA_URL", "OLLAMA_MODEL", "DATABASE_URL", "LLM_PROVIDER", "NVD_API_KEY",
-               "SECUREOPS_API_TOKEN", "API_PUBLIC_URL"):
+               "SECUREOPS_API_TOKEN"):
         if _k in st.secrets and not os.getenv(_k):
             os.environ[_k] = str(st.secrets[_k])
 except Exception:
@@ -82,19 +82,6 @@ def fmt_delta(td) -> str:
     d, rem = divmod(secs, 86400)
     h, rem = divmod(rem, 3600)
     return f"{sign}{d}d {h}h" if d else f"{sign}{h}h {rem // 60}m"
-
-
-def _api_url() -> str | None:
-    """Public API address if configured, else a locally running API (docker compose / uvicorn)."""
-    if os.getenv("API_PUBLIC_URL"):
-        return os.getenv("API_PUBLIC_URL")
-    try:
-        import requests
-        if requests.get("http://localhost:8000/health", timeout=1).ok:
-            return "http://localhost:8000"
-    except Exception:
-        pass
-    return None
 
 
 def ago(ts) -> str:
@@ -446,7 +433,6 @@ elif page == "Live data":
                 st.success(f"{f.name}: {kind} → {r['events']:,} events, {r['alerts']} alerts, "
                            f"{len(r['new_incidents'])} new incident(s) {', '.join(r['new_incidents'][:5])}")
     with t3:
-        api_url = _api_url()
         auto_live = st.toggle("Auto-refresh (every 5 s)", value=True, key="live_auto")
 
         @st.fragment(run_every=5 if auto_live else None)
@@ -457,8 +443,8 @@ elif page == "Live data":
                 "SUM(CASE WHEN source = 'suricata_alert' THEN 1 ELSE 0 END) AS ids_alerts "
                 "FROM events WHERE dataset = 'live' GROUP BY sensor")
             if sensors.empty:
-                st.info("No live sensor data yet. Start a sensor (instructions below) or upload logs - events appear here "
-                        "within seconds.", icon=":material/sensors_off:")
+                st.info("No live sensor data yet. Upload logs on the **Upload logs** tab - events appear here within "
+                        "seconds.", icon=":material/sensors_off:")
             else:
                 sensors["last_event"] = pd.to_datetime(sensors.last_event, utc=True, format="mixed")
                 age = (now_ - sensors.last_event).dt.total_seconds()
@@ -503,23 +489,6 @@ elif page == "Live data":
                             st.rerun()
         _live()
 
-        with st.expander("Connect a sensor", expanded=not db.count("events", "WHERE dataset = 'live'")):
-            shown = api_url or "https://<your-api>.onrender.com"
-            st.markdown(f"""
-Run **Zeek + Suricata** on a Linux machine, Raspberry Pi, WSL2 or Docker Desktop and stream their logs here in real time
-with the kit in the repository's `sensor/` folder. API for this dashboard: **{api_url or "not detected - deploy it (DEPLOY.md, level 3) and set API_PUBLIC_URL"}**.
-
-```bash
-cd sensor
-cp .env.example .env      # IFACE=eth0, API_URL={shown}, API_TOKEN=<SECUREOPS_API_TOKEN>
-docker compose up -d       # Zeek + Suricata + log shipper
-docker compose logs -f shipper
-```
-
-On Docker Desktop use `API_URL=http://host.docker.internal:8000` (the sensor then sees container traffic).
-The shipper POSTs new lines of `conn.log`, `ssh.log`, `software.log` and `eve.json` to `/ingest/zeek` and
-`/ingest/suricata`. No sensor? Capture with Wireshark/tcpdump, run `sensor/process_pcap.sh capture.pcap`, and upload
-the logs on the **Upload logs** tab.""")
 
 # =============================================================== ASSETS
 elif page == "Assets":
