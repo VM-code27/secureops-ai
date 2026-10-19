@@ -55,6 +55,12 @@ The sensor pushes logs to the API, and the API writes them to the same Neon data
    docker compose logs -f shipper
    ```
    New connections show up in the dashboard as `live` data within seconds. Detections, incidents, asset discovery and threat-intel matches all run on them.
+   **On Docker Desktop (Windows/macOS)** the sensor runs inside Docker's Linux VM. `IFACE=eth0` then sees the traffic of
+   your containers, not the whole Windows machine, and every container appears as one NAT address (e.g. 192.168.65.3).
+   Set `API_URL=http://host.docker.internal:8000` to reach an API running on Windows. This was tested: a 200-port
+   scan raised R-SCAN, an Nmap user-agent request raised Suricata "ET SCAN Possible Nmap User-Agent Observed"
+   (severity 1), and Docker Desktop's own control traffic to port 2376 was flagged as brute force. That is a real
+   false positive, so allow-list it from the incident page.
 4. **No Linux box?** Capture traffic with Wireshark on Windows and save it as `.pcap`. Then either run `sensor/process_pcap.sh capture.pcap` on any machine with Docker, or upload the resulting `conn.log` / `eve.json` on **Live data → Upload logs**.
 
 > Only monitor networks you own or are authorised to monitor.
