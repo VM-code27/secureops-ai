@@ -1,4 +1,4 @@
-"""Persistence: SQLite by default, any PostgreSQL (e.g. free Neon/Supabase) via DATABASE_URL."""
+"""Persistence: SQLite by default, any PostgreSQL (e.g. free Neon) via DATABASE_URL."""
 from __future__ import annotations
 
 import json
@@ -6,23 +6,83 @@ from datetime import datetime, timezone
 from functools import lru_cache
 
 import pandas as pd
-from sqlalchemy import (Boolean, Column, DateTime, Float, Integer, MetaData, String, Table, Text, create_engine, text,
-                        insert, select, update)
+from sqlalchemy import (BigInteger, Boolean, Column, DateTime, Float, Index, Integer, MetaData, String, Table, Text,
+                        create_engine, delete, insert, select, text, update)
 
 from . import config
 
 metadata = MetaData()
 
+events = Table(
+    "events", metadata,
+    Column("event_id", BigInteger, primary_key=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("source", String(24)),      # zeek_conn | zeek_ssh | suricata_alert | suricata_flow
+    Column("sensor", String(64)),      # replay:uwf-zeekdata24 | upload | <sensor name>
+    Column("dataset", String(16)),     # replay | live
+    Column("uid", String(64)),
+    Column("src_ip", String(64), index=True),
+    Column("src_port", Integer),
+    Column("dst_ip", String(64), index=True),
+    Column("dst_port", Integer),
+    Column("proto", String(16)),
+    Column("service", String(64)),
+    Column("conn_state", String(16)),
+    Column("duration", Float),
+    Column("bytes_out", BigInteger),
+    Column("bytes_in", BigInteger),
+    Column("pkts_out", BigInteger),
+    Column("pkts_in", BigInteger),
+    Column("outcome", String(16)),     # ssh auth: success | failure
+    Column("auth_attempts", Integer),
+    Column("signature", Text),
+    Column("signature_id", BigInteger),
+    Column("sig_severity", Integer),
+    Column("category", Text),
+)
+
+# Ground-truth labels for replayed datasets. Kept in a separate table that the detection
+# code never reads - only evaluate.py and the "lab label" panel use it.
+labels = Table(
+    "labels", metadata,
+    Column("event_id", BigInteger, primary_key=True),
+    Column("tactic", String(128)),
+    Column("technique", String(128)),
+)
+
+alerts = Table(
+    "alerts", metadata,
+    Column("alert_id", BigInteger, primary_key=True),
+    Column("alert_key", String(256), unique=True),
+    Column("incident_id", String(16), index=True),
+    Column("rule_id", String(32)),
+    Column("rule_name", String(128)),
+    Column("tactic", String(64)),
+    Column("technique", String(64)),
+    Column("ts", DateTime(timezone=True)),
+    Column("last_ts", DateTime(timezone=True)),
+    Column("src_ip", String(64)),
+    Column("dst_ip", String(64)),
+    Column("targets", Text),
+    Column("user", String(128)),
+    Column("confidence", Float),
+    Column("description", Text),
+    Column("evidence", Text),
+    Column("cve", String(32)),
+    Column("dataset", String(16)),
+)
+
 incidents = Table(
     "incidents", metadata,
     Column("incident_id", String(16), primary_key=True),
-    Column("dataset", String(32)),
+    Column("dataset", String(16)),
     Column("title", Text),
     Column("severity", String(16)),
     Column("score", Float),
     Column("status", String(24)),
     Column("owner", String(64)),
     Column("created_at", DateTime(timezone=True)),
+    Column("updated_at", DateTime(timezone=True)),
     Column("first_seen", DateTime(timezone=True)),
     Column("last_seen", DateTime(timezone=True)),
     Column("sla_due", DateTime(timezone=True)),
@@ -38,7 +98,6 @@ incidents = Table(
     Column("ai_mode", String(64)),
     Column("ai_support", Float),
     Column("ai_checks", Text),
-    Column("ground_truth", Text, nullable=True),
 )
 
 audit_log = Table(
@@ -51,31 +110,93 @@ audit_log = Table(
     Column("detail", Text),
 )
 
+assets = Table(
+    "assets", metadata,
+    Column("ip", String(64), primary_key=True),
+    Column("hostname", String(128), default=""),
+    Column("role", Text, default=""),
+    Column("criticality", Integer, default=1),
+    Column("criticality_source", String(16), default="inferred"),  # inferred | inventory
+    Column("owner", String(128), default=""),
+    Column("cpes", Text, default="[]"),
+    Column("cves", Text, default="[]"),
+    Column("software", Text, default="[]"),     # observed (Zeek software.log)
+    Column("services", Text, default="[]"),     # services this host answered
+    Column("fan_in", Integer, default=0),
+    Column("fan_out", Integer, default=0),
+    Column("is_hub", Boolean, default=False),
+    Column("first_seen", DateTime(timezone=True)),
+    Column("last_seen", DateTime(timezone=True)),
+    Column("notes", Text, default=""),
+)
+
+intel = Table(
+    "intel", metadata,
+    Column("indicator", String(64), primary_key=True),
+    Column("kind", String(8)),          # ip | cidr
+    Column("source", String(32)),
+    Column("context", Text),
+    Column("fetched_at", DateTime(timezone=True)),
+)
+
+vulns = Table(
+    "vulns", metadata,
+    Column("cve_id", String(32), primary_key=True),
+    Column("cvss", Float),
+    Column("severity", String(16)),
+    Column("description", Text),
+    Column("published", String(32)),
+    Column("kev", Boolean, default=False),
+    Column("kev_date", String(16)),
+    Column("ransomware", String(16)),
+    Column("epss", Float),
+    Column("epss_percentile", Float),
+    Column("fetched_at", DateTime(timezone=True)),
+)
+
 meta = Table("meta", metadata, Column("key", String(64), primary_key=True), Column("value", Text))
+Index("ix_alerts_rule_ts", alerts.c.rule_id, alerts.c.ts)
 
 STATUSES = ["New", "Investigating", "Contained", "Resolved", "False positive"]
+EVENT_COLUMNS = [c.name for c in events.columns]
 
 
-@lru_cache(maxsize=1)
-def engine():
+_override: dict = {}
+
+
+@lru_cache(maxsize=4)
+def _engine(url: str):
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    return create_engine(config.DATABASE_URL, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True)
+
+
+def engine():
+    return _engine(_override.get("url", config.DATABASE_URL))
+
+
+def use_database(url: str | None):
+    """Point this process at another database (used by the evaluation harness)."""
+    if url:
+        _override["url"] = url
+    else:
+        _override.pop("url", None)
+
+
+def py(ts):
+    """Timestamp -> python datetime (microsecond precision, as databases store it)."""
+    return None if ts is None else pd.Timestamp(ts).floor("us").to_pydatetime()
 
 
 def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def reset():
-    eng = engine()
-    with eng.begin() as c:
-        for t in ("events", "alerts"):
-            c.exec_driver_sql(f"DROP TABLE IF EXISTS {t}")
-    metadata.drop_all(eng)
-    metadata.create_all(eng)
-
-
 def ensure_schema():
+    metadata.create_all(engine())
+
+
+def reset():
+    metadata.drop_all(engine())
     metadata.create_all(engine())
 
 
@@ -87,27 +208,18 @@ def get_meta(key: str, default=None):
 
 
 def set_meta(key: str, value):
+    ensure_schema()
     with engine().begin() as c:
-        c.execute(meta.delete().where(meta.c.key == key))
+        c.execute(delete(meta).where(meta.c.key == key))
         c.execute(insert(meta).values(key=key, value=json.dumps(value, default=str)))
 
 
-# ------------------------------------------------------------------ events/alerts
 def _to_sql(df: pd.DataFrame, table: str):
+    if df.empty:
+        return
     multi = engine().dialect.name == "postgresql"  # SQLite caps bind variables; executemany is fast there
     df.to_sql(table, engine(), if_exists="append", index=False, chunksize=1000 if multi else 10000,
               method="multi" if multi else None)
-
-
-def write_events(df: pd.DataFrame):
-    _to_sql(df, "events")
-
-
-def write_alerts(df: pd.DataFrame):
-    out = df.copy()
-    out["targets"] = out.targets.map(json.dumps)
-    out["evidence"] = out.evidence.map(json.dumps)
-    _to_sql(out, "alerts")
 
 
 def _fix_ts(df: pd.DataFrame, cols) -> pd.DataFrame:
@@ -117,34 +229,11 @@ def _fix_ts(df: pd.DataFrame, cols) -> pd.DataFrame:
     return df
 
 
-def read_events(where: str = "", params: dict | None = None) -> pd.DataFrame:
-    df = pd.read_sql_query(f"SELECT * FROM events {where}", engine(), params=params)
-    return _fix_ts(df, ["ts"])
-
-
-def events_by_ids(ids: list[int]) -> pd.DataFrame:
-    if not ids:
-        return read_events("WHERE 1=0")
-    ids = sorted(set(int(i) for i in ids))
-    return read_events(f"WHERE event_id IN ({','.join(map(str, ids))})")
-
-
-def read_alerts(incident_id: str | None = None) -> pd.DataFrame:
-    if incident_id:
-        df = pd.read_sql_query(text("SELECT * FROM alerts WHERE incident_id = :i"), engine(), params={"i": incident_id})
-    else:
-        df = pd.read_sql_query("SELECT * FROM alerts", engine())
-    df["targets"] = df.targets.map(json.loads)
-    df["evidence"] = df.evidence.map(json.loads)
-    return _fix_ts(df, ["ts", "last_ts"])
-
-
-def max_id(table: str, col: str) -> int:
-    try:
-        with engine().connect() as c:
-            return int(c.exec_driver_sql(f"SELECT COALESCE(MAX({col}), 0) FROM {table}").scalar())
-    except Exception:
-        return 0
+def _ts(v):
+    if v is None:
+        return None
+    t = pd.Timestamp(v)
+    return t.tz_localize("UTC") if t.tzinfo is None else t
 
 
 def count(table: str, where: str = "") -> int:
@@ -152,10 +241,108 @@ def count(table: str, where: str = "") -> int:
         return int(c.exec_driver_sql(f"SELECT COUNT(*) FROM {table} {where}").scalar())
 
 
-# ------------------------------------------------------------------ incidents
-def insert_incident(row: dict):
+def max_id(table: str, col: str) -> int:
+    with engine().connect() as c:
+        return int(c.exec_driver_sql(f"SELECT COALESCE(MAX({col}), 0) FROM {table}").scalar())
+
+
+# ------------------------------------------------------------------ events / labels
+def write_events(df: pd.DataFrame):
+    _to_sql(df[EVENT_COLUMNS], "events")
+
+
+def write_labels(df: pd.DataFrame):
+    _to_sql(df[["event_id", "tactic", "technique"]], "labels")
+
+
+def read_events(where: str = "", params: dict | None = None) -> pd.DataFrame:
+    df = pd.read_sql_query(text(f"SELECT * FROM events {where}"), engine(), params=params or {})
+    return _fix_ts(df, ["ts"])
+
+
+def events_between(start, end) -> pd.DataFrame:
+    return read_events("WHERE ts >= :a AND ts < :b ORDER BY ts", {"a": py(start), "b": py(end)})
+
+
+def events_by_ids(ids) -> pd.DataFrame:
+    ids = sorted({int(i) for i in ids})
+    if not ids:
+        return read_events("WHERE 1=0")
+    frames = [read_events(f"WHERE event_id IN ({','.join(map(str, ids[i:i + 900]))})") for i in range(0, len(ids), 900)]
+    return pd.concat(frames, ignore_index=True)
+
+
+def read_labels() -> pd.DataFrame:
+    return pd.read_sql_table("labels", engine())
+
+
+def time_range(where: str = "") -> tuple:
+    with engine().connect() as c:
+        lo, hi = c.exec_driver_sql(f"SELECT MIN(ts), MAX(ts) FROM events {where}").first()
+    return _ts(lo), _ts(hi)
+
+
+# ------------------------------------------------------------------ alerts
+def write_alerts(df: pd.DataFrame):
+    out = df.copy()
+    out["targets"] = out.targets.map(json.dumps)
+    out["evidence"] = out.evidence.map(json.dumps)
+    _to_sql(out[[c.name for c in alerts.columns]], "alerts")
+
+
+def existing_alert_keys(keys: list[str]) -> set[str]:
+    found = set()
+    with engine().connect() as c:
+        for i in range(0, len(keys), 500):
+            found |= {r[0] for r in c.execute(select(alerts.c.alert_key).where(alerts.c.alert_key.in_(keys[i:i + 500])))}
+    return found
+
+
+def _decode_alerts(df: pd.DataFrame) -> pd.DataFrame:
+    df["targets"] = df.targets.map(json.loads)
+    df["evidence"] = df.evidence.map(json.loads)
+    return _fix_ts(df, ["ts", "last_ts"])
+
+
+def read_alerts(incident_ids: list[str] | str | None = None) -> pd.DataFrame:
+    q = select(alerts)
+    if incident_ids is not None:
+        ids = [incident_ids] if isinstance(incident_ids, str) else list(incident_ids)
+        q = q.where(alerts.c.incident_id.in_(ids or [""]))
+    with engine().connect() as c:
+        df = pd.DataFrame(c.execute(q).mappings().all(), columns=[col.name for col in alerts.columns])
+    return _decode_alerts(df)
+
+
+def set_alert_incident(alert_ids: list[int], incident_id: str):
     with engine().begin() as c:
-        c.execute(insert(incidents).values(**row))
+        for i in range(0, len(alert_ids), 500):
+            c.execute(update(alerts).where(alerts.c.alert_id.in_(alert_ids[i:i + 500])).values(incident_id=incident_id))
+
+
+# ------------------------------------------------------------------ incidents
+JSON_COLS = ("entities", "scoring", "ai_checks")
+TS_COLS = ("created_at", "updated_at", "first_seen", "last_seen", "sla_due", "acknowledged_at", "resolved_at")
+
+
+def _enc(row: dict) -> dict:
+    out = {}
+    for k, v in row.items():
+        if k in JSON_COLS:
+            v = json.dumps(v, default=str)
+        elif isinstance(v, pd.Timestamp):
+            v = py(v)
+        out[k] = v
+    return out
+
+
+def upsert_incident(row: dict):
+    with engine().begin() as c:
+        exists = c.execute(select(incidents.c.incident_id).where(incidents.c.incident_id == row["incident_id"])).first()
+        if exists:
+            c.execute(update(incidents).where(incidents.c.incident_id == row["incident_id"]).values(**_enc(row)))
+        else:
+            c.execute(insert(incidents).values(**_enc(row)))
 
 
 def next_incident_number() -> int:
@@ -166,23 +353,32 @@ def next_incident_number() -> int:
 
 def list_incidents() -> pd.DataFrame:
     ensure_schema()
-    df = pd.read_sql_table("incidents", engine())
-    df = _fix_ts(df, ["created_at", "first_seen", "last_seen", "sla_due", "acknowledged_at", "resolved_at"])
-    return df.sort_values(["score"], ascending=False)
+    with engine().connect() as c:
+        df = pd.DataFrame(c.execute(select(incidents)).mappings().all(), columns=[col.name for col in incidents.columns])
+    df = _fix_ts(df, TS_COLS)
+    return df.sort_values("score", ascending=False)
+
+
+def _decode_incident(d) -> dict:
+    d = dict(d)
+    for k in JSON_COLS:
+        d[k] = json.loads(d[k]) if d[k] else {}
+    for k in TS_COLS:
+        d[k] = _ts(d[k])
+    return d
 
 
 def get_incident(incident_id: str) -> dict | None:
     with engine().connect() as c:
         row = c.execute(select(incidents).where(incidents.c.incident_id == incident_id)).mappings().first()
-    if not row:
-        return None
-    d = dict(row)
-    for k in ("entities", "scoring", "ai_checks"):
-        d[k] = json.loads(d[k]) if d[k] else {}
-    for k in ("created_at", "first_seen", "last_seen", "sla_due", "acknowledged_at", "resolved_at"):
-        if d[k] is not None:
-            d[k] = pd.Timestamp(d[k]).tz_localize("UTC") if pd.Timestamp(d[k]).tzinfo is None else pd.Timestamp(d[k])
-    return d
+    return _decode_incident(row) if row else None
+
+
+def open_incidents_since(since) -> list[dict]:
+    q = select(incidents).where(incidents.c.status.notin_(["Resolved", "False positive"]),
+                                incidents.c.last_seen >= py(since))
+    with engine().connect() as c:
+        return [_decode_incident(r) for r in c.execute(q).mappings().all()]
 
 
 def audit(incident_id: str, action: str, detail: str, actor: str = "system"):
@@ -195,8 +391,8 @@ def read_audit(incident_id: str | None = None) -> pd.DataFrame:
     if incident_id:
         q = q.where(audit_log.c.incident_id == incident_id)
     with engine().connect() as c:
-        df = pd.DataFrame(c.execute(q).mappings().all())
-    return _fix_ts(df, ["ts"]) if not df.empty else pd.DataFrame(columns=["id", "ts", "actor", "incident_id", "action", "detail"])
+        df = pd.DataFrame(c.execute(q).mappings().all(), columns=[col.name for col in audit_log.columns])
+    return _fix_ts(df, ["ts"])
 
 
 def update_incident(incident_id: str, actor: str, **changes):
@@ -208,19 +404,79 @@ def update_incident(incident_id: str, actor: str, **changes):
     if not changes:
         return cur
     ts = now()
-    if "owner" in changes and changes["owner"] != "Unassigned" and cur["acknowledged_at"] is None:
+    if changes.get("owner", "Unassigned") != "Unassigned" and cur["acknowledged_at"] is None:
         changes["acknowledged_at"] = ts
-    if changes.get("status") in ("Resolved", "False positive") and cur["resolved_at"] is None:
-        changes["resolved_at"] = ts
+    if changes.get("status") in ("Resolved", "False positive"):
+        changes["resolved_at"] = cur["resolved_at"] or ts
         changes["false_positive"] = changes["status"] == "False positive"
-        if cur["acknowledged_at"] is None:
-            changes["acknowledged_at"] = ts
-    if changes.get("status") in ("New", "Investigating", "Contained"):
+        changes.setdefault("acknowledged_at", cur["acknowledged_at"] or ts)
+    elif changes.get("status") in ("New", "Investigating", "Contained"):
         changes["resolved_at"] = None
         changes["false_positive"] = False
+    changes["updated_at"] = ts
     with engine().begin() as c:
-        c.execute(update(incidents).where(incidents.c.incident_id == incident_id).values(**changes))
+        c.execute(update(incidents).where(incidents.c.incident_id == incident_id).values(**_enc(changes)))
     for k, v in changes.items():
         if k in ("owner", "status", "resolution"):
             audit(incident_id, f"set_{k}", f"{cur.get(k)!s} -> {v!s}", actor)
     return get_incident(incident_id)
+
+
+# ------------------------------------------------------------------ assets / intel / vulns
+ASSET_JSON = ("cpes", "cves", "software", "services")
+
+
+def read_assets() -> pd.DataFrame:
+    ensure_schema()
+    with engine().connect() as c:
+        df = pd.DataFrame(c.execute(select(assets)).mappings().all(), columns=[col.name for col in assets.columns])
+    for k in ASSET_JSON:
+        df[k] = df[k].map(lambda v: json.loads(v) if v else [])
+    return _fix_ts(df, ["first_seen", "last_seen"])
+
+
+def upsert_assets(rows: list[dict]):
+    if not rows:
+        return
+    enc = [_enc({k: (json.dumps(v) if k in ASSET_JSON else v) for k, v in r.items()}) for r in rows]
+    with engine().begin() as c:
+        ips = [r["ip"] for r in enc]
+        have = set()
+        for i in range(0, len(ips), 500):
+            have |= {x[0] for x in c.execute(select(assets.c.ip).where(assets.c.ip.in_(ips[i:i + 500])))}
+        for r in enc:
+            if r["ip"] in have:
+                c.execute(update(assets).where(assets.c.ip == r["ip"]).values(**{k: v for k, v in r.items() if k != "ip"}))
+            else:
+                c.execute(insert(assets).values(**r))
+
+
+def replace_intel(source: str, df: pd.DataFrame):
+    with engine().begin() as c:
+        c.execute(delete(intel).where(intel.c.source == source))
+    if not df.empty:
+        existing = set(read_intel().indicator)
+        _to_sql(df.drop_duplicates("indicator")[lambda d: ~d.indicator.isin(existing)], "intel")
+
+
+def read_intel() -> pd.DataFrame:
+    ensure_schema()
+    with engine().connect() as c:
+        df = pd.DataFrame(c.execute(select(intel)).mappings().all(), columns=[col.name for col in intel.columns])
+    return _fix_ts(df, ["fetched_at"])
+
+
+def read_vulns(cve_ids=None) -> pd.DataFrame:
+    ensure_schema()
+    q = select(vulns)
+    if cve_ids is not None:
+        q = q.where(vulns.c.cve_id.in_(list(cve_ids) or [""]))
+    with engine().connect() as c:
+        return pd.DataFrame(c.execute(q).mappings().all(), columns=[col.name for col in vulns.columns])
+
+
+def upsert_vulns(rows: list[dict]):
+    with engine().begin() as c:
+        for r in rows:
+            c.execute(delete(vulns).where(vulns.c.cve_id == r["cve_id"]))
+            c.execute(insert(vulns).values(**_enc(r)))

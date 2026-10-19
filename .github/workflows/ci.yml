@@ -14,7 +14,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pytest -q
-      - name: Evaluate on labelled lab data (held-out test set)
+      - name: Evaluate on real labelled data (UWF-ZeekData24, held-out days)
         run: python -m secureops.evaluate > evaluation.md
       - uses: actions/upload-artifact@v4
         with:
@@ -27,3 +27,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t secureops-ai .
+      - name: Validate sensor kit
+        run: cp sensor/.env.example sensor/.env && docker compose -f sensor/docker-compose.yml config -q

@@ -1,87 +1,97 @@
 """Unsupervised behavioural anomaly detection (Isolation Forest).
 
-Unit of analysis: one source IP in one clock hour. The model is trained without
-labels, so it can flag behaviour that no rule describes - and it will also flag
-benign oddities, which is why its confidence is kept below the rules'.
+Unit of analysis: one source IP in one clock hour. The model is trained without labels on
+the first `detection.anomaly.baseline_hours` of observed traffic and then scores every
+completed hour. Context features come from the discovered asset inventory (is the host
+external, does it serve anything, how popular is it) - not from hard-coded subnets.
 """
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
-from ..assets import is_internal
-from ..config import ALLOWLIST_SOURCES, SEED, THRESHOLDS
+from .. import settings
+from ..assets import home_nets, index as asset_index
 
-FEATURES = ["n_conn", "n_dst", "n_port", "log_bytes_out", "log_bytes_in", "n_auth_fail", "rej_ratio",
-            "n_ext_dst", "off_hours", "is_external", "is_server", "is_iot"]
-FEATURE_LABELS = {
-    "n_conn": "connections", "n_dst": "distinct destinations", "n_port": "distinct destination ports",
-    "log_bytes_out": "bytes sent", "log_bytes_in": "bytes received", "n_auth_fail": "failed logins",
-    "rej_ratio": "rejected-connection ratio", "n_ext_dst": "distinct external destinations",
-    "off_hours": "off-hours activity", "is_external": "external source", "is_server": "server",
-    "is_iot": "IoT device",
-}
-CONTEXT_FEATURES = {"is_external", "is_server", "is_iot", "off_hours"}
+FEATURES = ["n_conn", "n_dst", "n_port", "log_bytes_out", "log_bytes_in", "fail_ratio", "n_ext_dst", "n_auth_fail",
+            "is_external", "is_server", "log_fan_in"]
+LABELS = {"n_conn": "connections", "n_dst": "distinct destinations", "n_port": "distinct destination ports",
+          "log_bytes_out": "bytes sent", "log_bytes_in": "bytes received", "fail_ratio": "share of unanswered connections",
+          "n_ext_dst": "distinct external destinations", "n_auth_fail": "failed logins"}
+CONTEXT = {"is_external", "is_server", "log_fan_in"}
+FAILED = {"S0", "REJ", "RSTOS0", "RSTRH", "SH", "SHR", "OTH"}
 
 
 def window_features(events: pd.DataFrame) -> pd.DataFrame:
-    ev = events[~events.src_ip.isin(ALLOWLIST_SOURCES)].copy()
+    allow = set(settings.section("network")["allowlist_sources"])
+    ev = events[events.source.isin(["zeek_conn", "suricata_flow", "zeek_ssh"]) & ~events.src_ip.isin(allow)].copy()
+    if ev.empty:
+        return pd.DataFrame(columns=["src_ip", "hour"] + FEATURES)
+    home = home_nets(events)
     ev["hour"] = ev.ts.dt.floor("h")
-    ev["is_rej"] = ev.conn_state.isin(["REJ", "S0"]) & (ev.source == "zeek_conn")
-    ev["is_fail"] = ev.outcome == "failure"
-    ev["ext_dst"] = np.where(ev.dst_ip.map(is_internal), None, ev.dst_ip)
+    ev["failed"] = ev.conn_state.isin(FAILED)
+    ev["auth_fail"] = ev.outcome == "failure"
+    ev["ext_dst"] = ev.dst_ip.where(~ev.dst_ip.map(lambda x: x in home).astype(bool))
     g = ev.groupby(["src_ip", "hour"])
     f = pd.DataFrame({
-        "n_conn": g.size(),
-        "n_dst": g.dst_ip.nunique(),
-        "n_port": g.dst_port.nunique(),
-        "log_bytes_out": np.log1p(g.bytes_out.sum()),
-        "log_bytes_in": np.log1p(g.bytes_in.sum()),
-        "n_auth_fail": g.is_fail.sum(),
-        "rej_ratio": g.is_rej.mean(),
-        "n_ext_dst": g.ext_dst.nunique(),
+        "n_conn": g.size(), "n_dst": g.dst_ip.nunique(), "n_port": g.dst_port.nunique(),
+        "log_bytes_out": np.log1p(g.bytes_out.sum()), "log_bytes_in": np.log1p(g.bytes_in.sum()),
+        "fail_ratio": g.failed.mean(), "n_ext_dst": g.ext_dst.nunique(), "n_auth_fail": g.auth_fail.sum(),
     }).reset_index()
-    hod = f.hour.dt.hour
-    f["off_hours"] = ((hod < 7) | (hod >= 20)).astype(int)
-    # Peer-group context: a camera talking to the internet is odd; a laptop doing it is not.
-    f["is_external"] = (~f.src_ip.map(is_internal)).astype(int)
-    f["is_server"] = f.src_ip.str.startswith("10.10.1.").astype(int)
-    f["is_iot"] = f.src_ip.str.startswith("10.10.4.").astype(int)
+    idx = asset_index()
+    f["is_external"] = (~f.src_ip.map(lambda x: x in home).astype(bool)).astype(int)
+    f["is_server"] = f.src_ip.map(lambda x: int(bool(idx.get(x, {}).get("services"))))
+    f["log_fan_in"] = f.src_ip.map(lambda x: math.log1p(idx.get(x, {}).get("fan_in", 0) or 0))
     return f
 
 
 class AnomalyModel:
-    def __init__(self, contamination: float | None = None, seed: int = SEED):
-        self.contamination = contamination or THRESHOLDS["anomaly_contamination"]
-        self.model = IsolationForest(n_estimators=200, contamination=self.contamination, random_state=seed)
-        self.baseline: pd.DataFrame | None = None
-        self.score_range = (0.0, 1.0)
+    def __init__(self):
+        conf = settings.section("detection")["anomaly"]
+        self.contamination = conf["contamination"]
+        self.model = IsolationForest(n_estimators=conf["n_estimators"], contamination=self.contamination, random_state=0)
+        self.baseline = None
+        self.max_score = 1.0
+        self.trained_on = 0
+        self.trained_until = None
 
     def fit(self, events: pd.DataFrame) -> "AnomalyModel":
         f = window_features(events)
-        self.model.fit(f[FEATURES].values)
-        self.baseline = f[FEATURES].describe(percentiles=[0.5, 0.95]).loc[["50%", "95%"]]
-        s = -self.model.decision_function(f[FEATURES].values)
-        self.score_range = (0.0, float(s.max()) or 1.0)
+        if len(f) < 20:
+            raise ValueError("not enough traffic to train the anomaly model")
+        X = f[FEATURES].values
+        self.model.fit(X)
+        self.baseline = f[FEATURES].quantile([0.5, 0.95])
+        self.max_score = float(max(1e-6, (-self.model.decision_function(X)).max()))
+        self.trained_on = len(f)
+        self.trained_until = events.ts.max()
         return self
 
-    def explain(self, row: pd.Series) -> str:
+    def _explain(self, row) -> str:
         parts = []
         for feat in FEATURES:
-            if feat in CONTEXT_FEATURES:
+            if feat in CONTEXT:
                 continue
-            p95 = self.baseline.loc["95%", feat]
+            p95, med = self.baseline.loc[0.95, feat], self.baseline.loc[0.5, feat]
             if row[feat] > p95 and row[feat] > 0:
-                val = np.expm1(row[feat]) if feat.startswith("log_") else row[feat]
-                med = np.expm1(self.baseline.loc["50%", feat]) if feat.startswith("log_") else self.baseline.loc["50%", feat]
-                parts.append((row[feat] / (p95 + 1e-9), f"{FEATURE_LABELS[feat]} = {val:,.0f} (typical {med:,.0f})"
-                              if feat != "rej_ratio" else f"{FEATURE_LABELS[feat]} = {val:.0%}"))
+                if feat.startswith("log_"):
+                    val, typ = f"{np.expm1(row[feat]):,.0f}", f"{np.expm1(med):,.0f}"
+                elif feat == "fail_ratio":
+                    val, typ = f"{row[feat]:.0%}", f"{med:.0%}"
+                else:
+                    val, typ = f"{row[feat]:,.0f}", f"{med:,.0f}"
+                parts.append((row[feat] / (p95 + 1e-9), f"{LABELS[feat]} = {val} (typical {typ})"))
         parts.sort(reverse=True)
-        return "; ".join(p for _, p in parts[:3]) or "unusual combination of features"
+        return "; ".join(p for _, p in parts[:3]) or "unusual combination of features for this kind of host"
 
-    def detect(self, events: pd.DataFrame) -> list[dict]:
+    def detect(self, events: pd.DataFrame, hours: set | None = None) -> list[dict]:
+        """Score (src, hour) windows; `hours` restricts scoring to completed hours."""
         f = window_features(events)
+        if hours is not None:
+            f = f[f.hour.isin(hours)]
         if f.empty:
             return []
         X = f[FEATURES].values
@@ -89,31 +99,20 @@ class AnomalyModel:
         scores = -self.model.decision_function(X)
         pair_freq = events.groupby(["dst_ip", "dst_port"]).size()
         windows = events.groupby([events.src_ip, events.ts.dt.floor("h")]).indices
-        alerts = []
+        meta = settings.rules()["ML-ANOMALY"]
+        out = []
         for (_, row), is_out, s in zip(f.iterrows(), flagged, scores):
             if not is_out:
                 continue
             w = events.iloc[windows[(row.src_ip, row.hour)]]
             rarity = w.set_index(["dst_ip", "dst_port"]).index.map(pair_freq).to_numpy()
             w = w.assign(_r=rarity).sort_values(["_r", "bytes_out"], ascending=[True, False]).head(25)
-            conf = 0.4 + 0.3 * min(1.0, max(0.0, s) / self.score_range[1])
-            alerts.append(dict(
-                rule_id="ML-ANOMALY", rule_name="Behavioural anomaly (Isolation Forest)", tactic="Anomaly",
-                technique="", ts=w.ts.min(), last_ts=w.ts.max(), src_ip=row.src_ip, dst_ip="", targets=[], user="",
-                confidence=float(conf),
-                description=f"Hourly behaviour of {row.src_ip} at {row.hour:%Y-%m-%d %H:00} UTC is anomalous "
-                            f"(score {s:.3f}): {self.explain(row)}.",
+            conf = meta["confidence"] - 0.1 + 0.2 * min(1.0, max(0.0, s) / self.max_score)
+            out.append(dict(
+                alert_key=f"ML-ANOMALY|{row.src_ip}|{row.hour.isoformat()}", rule_id="ML-ANOMALY", rule_name=meta["name"],
+                tactic=meta["tactic"], technique=meta["technique"], ts=w.ts.min(), last_ts=w.ts.max(),
+                src_ip=row.src_ip, dst_ip="", targets=[], user="", confidence=float(conf),
+                description=f"Behaviour of {row.src_ip} during {row.hour:%Y-%m-%d %H:00} UTC is anomalous for its peer "
+                            f"group (score {s:.3f}): {self._explain(row)}.",
                 evidence=[int(x) for x in w.event_id], cve=""))
-        return alerts
-
-
-def detect_all(events: pd.DataFrame, model: AnomalyModel) -> pd.DataFrame:
-    from .rules import detect_rules
-
-    alerts = detect_rules(events) + model.detect(events)
-    df = pd.DataFrame(alerts)
-    if df.empty:
-        return df
-    df["ts"] = pd.to_datetime(df.ts, utc=True)
-    df["last_ts"] = pd.to_datetime(df.last_ts, utc=True)
-    return df.sort_values("ts", kind="stable").reset_index(drop=True)
+        return out

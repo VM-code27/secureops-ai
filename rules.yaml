@@ -1,0 +1,57 @@
+# Detection rule catalogue: metadata only. Thresholds live in config.yaml (detection.*);
+# the matching logic is in secureops/detection/rules.py.
+# confidence = how likely an alert from this rule is a real attack (used for scoring).
+R-SCAN:
+  name: Port scan / host sweep
+  tactic: Reconnaissance
+  technique: T1046
+  confidence: 0.5
+  playbook: PB-SCAN
+R-BRUTE:
+  name: Repeated connection attempts (brute force)
+  tactic: Credential Access
+  technique: T1110
+  confidence: 0.6
+  playbook: PB-BRUTE
+R-SSH-BRUTE:
+  name: SSH authentication failures
+  tactic: Credential Access
+  technique: T1110.001
+  confidence: 0.65
+  playbook: PB-BRUTE
+R-SSH-OK:
+  name: SSH login success after failures
+  tactic: Initial Access
+  technique: T1078
+  confidence: 0.85
+  playbook: PB-BRUTE-OK
+R-LATERAL:
+  name: Lateral movement fan-out
+  tactic: Lateral Movement
+  technique: T1021
+  confidence: 0.75
+  playbook: PB-LATERAL
+R-EXFIL:
+  name: Large outbound transfer
+  tactic: Exfiltration
+  technique: T1048
+  confidence: 0.6
+  playbook: PB-EXFIL
+R-IOC:
+  name: Threat-intel indicator match
+  tactic: Command and Control
+  technique: T1071
+  confidence: 0.9
+  playbook: PB-IOC
+R-IDS:
+  name: Suricata IDS alert
+  tactic: Initial Access
+  technique: T1190
+  confidence: 0.6      # adjusted by Suricata severity: 1 -> +0.2, 3 -> -0.2
+  playbook: PB-IDS
+ML-ANOMALY:
+  name: Behavioural anomaly (Isolation Forest)
+  tactic: Anomaly
+  technique: ""
+  confidence: 0.45
+  playbook: PB-ANOMALY

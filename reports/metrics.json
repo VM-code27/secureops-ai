@@ -1,543 +1,383 @@
 {
-  "generated_at": "2026-10-19T09:51:50+00:00",
-  "dev_seed": 42,
-  "test_seed": 1337,
-  "note": "Synthetic controlled-lab data. Thresholds were tuned on 'development'; 'test' is held out.",
+  "generated_at": "2026-10-19T10:52:06+00:00",
+  "dataset": "UWF-ZeekData24 (real Zeek conn logs, MITRE ATT&CK labels, CC BY 4.0)",
+  "split_at": "2024-03-06T00:00:00+00:00",
+  "settings": {
+    "scan": {
+      "window": "5min",
+      "distinct_ports": 15,
+      "distinct_hosts": 25
+    },
+    "bruteforce": {
+      "window": "5min",
+      "attempts": 10,
+      "ignore_services": [
+        "dns",
+        "ntp",
+        "dhcp"
+      ]
+    },
+    "ssh_bruteforce": {
+      "window": "5min",
+      "failures": 5
+    },
+    "lateral": {
+      "window": "10min",
+      "distinct_hosts": 10,
+      "ports": [
+        22,
+        135,
+        445,
+        3389,
+        5985,
+        5986
+      ]
+    },
+    "exfil": {
+      "bytes_per_conn": 104857600
+    },
+    "anomaly": {
+      "contamination": 0.005,
+      "baseline_hours": 48,
+      "n_estimators": 200
+    }
+  },
+  "model": {
+    "trained_at": "2026-10-19 10:51:06.101313+00:00",
+    "baseline_from": "2024-02-28 04:00:37.805661+00:00",
+    "baseline_to": "2024-03-01 04:00:36.306241+00:00",
+    "windows": 1854,
+    "contamination": 0.005
+  },
   "development": {
     "data": {
-      "events": 32202,
-      "attack_events": 978,
-      "windows": 14270,
-      "malicious_windows": 53
+      "events": 54582,
+      "attack_events": 15179,
+      "windows": 4563,
+      "attack_windows": 1536,
+      "days": 5
     },
     "detection_combined": {
-      "precision": 0.531,
-      "recall": 0.642,
-      "f1": 0.581,
-      "false_positive_rate": 0.0021,
-      "tp": 34,
-      "fp": 30,
-      "fn": 19,
-      "tn": 14187
+      "precision": 0.982,
+      "recall": 0.507,
+      "f1": 0.669,
+      "false_positive_rate": 0.0046,
+      "tp": 779,
+      "fp": 14,
+      "fn": 757,
+      "tn": 3013
     },
     "detection_rules_only": {
-      "precision": 0.692,
-      "recall": 0.17,
-      "f1": 0.273,
-      "false_positive_rate": 0.0003,
-      "tp": 9,
-      "fp": 4,
-      "fn": 44,
-      "tn": 14213
+      "precision": 1.0,
+      "recall": 0.499,
+      "f1": 0.666,
+      "false_positive_rate": 0.0,
+      "tp": 767,
+      "fp": 0,
+      "fn": 769,
+      "tn": 3027
     },
     "detection_anomaly_only": {
-      "precision": 0.517,
-      "recall": 0.566,
-      "f1": 0.541,
-      "false_positive_rate": 0.002,
-      "tp": 30,
-      "fp": 28,
-      "fn": 23,
-      "tn": 14189
+      "precision": 0.588,
+      "recall": 0.013,
+      "f1": 0.025,
+      "false_positive_rate": 0.0046,
+      "tp": 20,
+      "fp": 14,
+      "fn": 1516,
+      "tn": 3013
     },
-    "alert_precision": 0.917,
-    "campaign_recall": 0.714,
-    "per_campaign": [
+    "alert_precision": 0.984,
+    "per_tactic": [
       {
-        "campaign": "C1",
-        "name": "Multi-stage intrusion (scan > exploit > C2 > lateral > exfil)",
-        "events": 414,
-        "detected": true,
+        "tactic": "Credential Access",
+        "events": 14121,
+        "windows": 1384,
+        "windows_detected": 0.56,
+        "events_cited_as_evidence": 0.786,
         "detected_by": [
           "ML-ANOMALY",
-          "R-EXFIL",
-          "R-IDS",
-          "R-IOC",
-          "R-LATERAL",
-          "R-SCAN"
+          "R-BRUTE"
         ],
-        "alerts": 197,
-        "incidents": 1,
-        "top_severity": "Critical",
-        "top_score": 100.0,
-        "why_missed": null
+        "incidents": 99
       },
       {
-        "campaign": "C2",
-        "name": "SSH brute force leading to account compromise",
-        "events": 82,
-        "detected": true,
-        "detected_by": [
-          "ML-ANOMALY",
-          "R-BRUTE",
-          "R-BRUTE-OK",
-          "R-IOC"
-        ],
-        "alerts": 92,
-        "incidents": 1,
-        "top_severity": "Critical",
-        "top_score": 81.8,
-        "why_missed": null
-      },
-      {
-        "campaign": "C3",
-        "name": "VPN password spray",
-        "events": 40,
-        "detected": true,
-        "detected_by": [
-          "ML-ANOMALY",
-          "R-BRUTE",
-          "R-SPRAY"
-        ],
-        "alerts": 35,
-        "incidents": 1,
-        "top_severity": "High",
-        "top_score": 70.4,
-        "why_missed": null
-      },
-      {
-        "campaign": "C4",
-        "name": "IoT camera exploitation and botnet C2",
-        "events": 60,
-        "detected": true,
-        "detected_by": [
-          "ML-ANOMALY",
-          "R-IDS"
-        ],
-        "alerts": 4,
-        "incidents": 1,
-        "top_severity": "High",
-        "top_score": 71.8,
-        "why_missed": null
-      },
-      {
-        "campaign": "C5",
-        "name": "Low-and-slow port scan (hard)",
-        "events": 360,
-        "detected": true,
+        "tactic": "Reconnaissance",
+        "events": 814,
+        "windows": 523,
+        "windows_detected": 0.424,
+        "events_cited_as_evidence": 0.049,
         "detected_by": [
           "ML-ANOMALY"
         ],
-        "alerts": 25,
-        "incidents": 1,
-        "top_severity": "Low",
-        "top_score": 36.5,
-        "why_missed": null
+        "incidents": 14
       },
       {
-        "campaign": "C6",
-        "name": "Slow data exfiltration over HTTPS (hard)",
-        "events": 16,
-        "detected": false,
-        "detected_by": [],
-        "alerts": 0,
-        "incidents": 0,
-        "top_severity": null,
-        "top_score": null,
-        "why_missed": "~4 MB per hour over HTTPS to an unlisted host looks like normal web uploads"
+        "tactic": "Initial Access",
+        "events": 159,
+        "windows": 154,
+        "windows_detected": 0.539,
+        "events_cited_as_evidence": 0.038,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 6
       },
       {
-        "campaign": "C7",
-        "name": "Valid-account misuse with stolen credentials (hard)",
-        "events": 6,
-        "detected": false,
-        "detected_by": [],
-        "alerts": 0,
-        "incidents": 0,
-        "top_severity": null,
-        "top_score": null,
-        "why_missed": "a single successful VPN login with valid credentials followed by normal-looking file access matches no rule and is not statistically unusual"
+        "tactic": "Defense Evasion",
+        "events": 96,
+        "windows": 96,
+        "windows_detected": 0.542,
+        "events_cited_as_evidence": 0.042,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 4
+      },
+      {
+        "tactic": "Persistence",
+        "events": 96,
+        "windows": 96,
+        "windows_detected": 0.542,
+        "events_cited_as_evidence": 0.042,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 4
+      },
+      {
+        "tactic": "Privilege Escalation",
+        "events": 96,
+        "windows": 96,
+        "windows_detected": 0.542,
+        "events_cited_as_evidence": 0.042,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 4
+      },
+      {
+        "tactic": "Exfiltration",
+        "events": 5,
+        "windows": 5,
+        "windows_detected": 0.4,
+        "events_cited_as_evidence": 0.2,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 1
       }
     ],
     "per_rule": [
       {
         "rule_id": "ML-ANOMALY",
-        "alerts": 58,
-        "true_alerts": 30,
-        "precision": 0.517
+        "alerts": 34,
+        "true_alerts": 20,
+        "precision": 0.588
       },
       {
         "rule_id": "R-BRUTE",
-        "alerts": 25,
-        "true_alerts": 24,
-        "precision": 0.96
-      },
-      {
-        "rule_id": "R-BRUTE-OK",
-        "alerts": 2,
-        "true_alerts": 1,
-        "precision": 0.5
-      },
-      {
-        "rule_id": "R-EXFIL",
-        "alerts": 3,
-        "true_alerts": 1,
-        "precision": 0.333
-      },
-      {
-        "rule_id": "R-IDS",
-        "alerts": 11,
-        "true_alerts": 11,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-IOC",
-        "alerts": 263,
-        "true_alerts": 263,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-LATERAL",
-        "alerts": 4,
-        "true_alerts": 4,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-SCAN",
-        "alerts": 2,
-        "true_alerts": 2,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-SPRAY",
-        "alerts": 17,
-        "true_alerts": 17,
+        "alerts": 819,
+        "true_alerts": 819,
         "precision": 1.0
       }
     ],
     "correlation": {
-      "alerts": 385,
-      "incidents": 34,
-      "alert_reduction": 0.912,
-      "true_incidents": 5,
-      "false_positive_incidents": 29,
-      "true_attack_alerts": 353,
-      "true_attack_alerts_per_incident": 70.6,
-      "incidents_mixing_campaigns": 0,
-      "false_positive_sources": {
-        "Behavioural anomaly (Isolation Forest)": 27,
-        "Large outbound data transfer": 2
-      }
+      "alerts": 853,
+      "incidents": 112,
+      "alert_reduction": 0.869,
+      "true_incidents": 103,
+      "false_positive_incidents": 9
     },
     "prioritisation": {
-      "precision_at_k": 0.8,
-      "k": 5,
-      "mean_score_true": 72.1,
-      "mean_score_false": 39.2,
-      "top5": [
-        {
-          "id": "INC-0011",
-          "score": 100.0,
-          "truth": "C1",
-          "title": "Multi-stage attack - web-srv-01 (Reconnaissance > Initial Access > Command and Control > Lateral Movement > Exfiltration > Anomaly)"
-        },
-        {
-          "id": "INC-0015",
-          "score": 81.8,
-          "truth": "C2",
-          "title": "Multi-stage attack - db-srv-01 (Reconnaissance > Initial Access > Credential Access > Anomaly)"
-        },
-        {
-          "id": "INC-0018",
-          "score": 71.9,
-          "truth": "benign",
-          "title": "Behavioural anomaly (Isolation Forest) - ws-0042 (Initial Access > Credential Access > Anomaly)"
-        },
-        {
-          "id": "INC-0017",
-          "score": 71.8,
-          "truth": "C4",
-          "title": "IDS exploit signature - camera-017 (Initial Access > Anomaly)"
-        },
-        {
-          "id": "INC-0031",
-          "score": 70.4,
-          "truth": "C3",
-          "title": "Password spray - vpn-gw-01 (Credential Access > Anomaly)"
-        }
-      ]
-    },
-    "triage_queue": {
-      "before_alerts": 385,
-      "after_incidents": 34,
-      "after_high_or_critical": 5
+      "k": 103,
+      "precision_at_k": 0.913,
+      "mean_score_true": 40.0,
+      "mean_score_false": 30.3,
+      "severity_true": {
+        "Medium": 94,
+        "Low": 9
+      },
+      "severity_false": {
+        "Low": 9
+      }
     },
     "ai_reliability": {
       "mode": [
         "offline-evidence-template"
       ],
       "mean_supported_sentence_rate": 1.0,
-      "sentences_checked": 367,
+      "sentences_checked": 1170,
       "unsupported_sentences": 0
     }
   },
   "test": {
     "data": {
-      "events": 32347,
-      "attack_events": 978,
-      "windows": 14262,
-      "malicious_windows": 56
+      "events": 136412,
+      "attack_events": 32097,
+      "windows": 12049,
+      "attack_windows": 4046,
+      "days": 13
     },
     "detection_combined": {
-      "precision": 0.449,
-      "recall": 0.625,
-      "f1": 0.522,
-      "false_positive_rate": 0.003,
-      "tp": 35,
-      "fp": 43,
-      "fn": 21,
-      "tn": 14163
+      "precision": 0.971,
+      "recall": 0.328,
+      "f1": 0.491,
+      "false_positive_rate": 0.005,
+      "tp": 1329,
+      "fp": 40,
+      "fn": 2717,
+      "tn": 7963
     },
     "detection_rules_only": {
-      "precision": 0.769,
-      "recall": 0.179,
-      "f1": 0.29,
-      "false_positive_rate": 0.0002,
-      "tp": 10,
-      "fp": 3,
-      "fn": 46,
-      "tn": 14203
+      "precision": 1.0,
+      "recall": 0.315,
+      "f1": 0.479,
+      "false_positive_rate": 0.0,
+      "tp": 1273,
+      "fp": 0,
+      "fn": 2773,
+      "tn": 8003
     },
     "detection_anomaly_only": {
-      "precision": 0.431,
-      "recall": 0.554,
-      "f1": 0.484,
-      "false_positive_rate": 0.0029,
-      "tp": 31,
-      "fp": 41,
-      "fn": 25,
-      "tn": 14165
+      "precision": 0.633,
+      "recall": 0.017,
+      "f1": 0.033,
+      "false_positive_rate": 0.005,
+      "tp": 69,
+      "fp": 40,
+      "fn": 3977,
+      "tn": 7963
     },
-    "alert_precision": 0.887,
-    "campaign_recall": 0.714,
-    "per_campaign": [
+    "alert_precision": 0.972,
+    "per_tactic": [
       {
-        "campaign": "C1",
-        "name": "Multi-stage intrusion (scan > exploit > C2 > lateral > exfil)",
-        "events": 414,
-        "detected": true,
+        "tactic": "Credential Access",
+        "events": 29373,
+        "windows": 3642,
+        "windows_detected": 0.363,
+        "events_cited_as_evidence": 0.611,
         "detected_by": [
           "ML-ANOMALY",
-          "R-EXFIL",
-          "R-IDS",
-          "R-IOC",
-          "R-LATERAL",
-          "R-SCAN"
+          "R-BRUTE"
         ],
-        "alerts": 198,
-        "incidents": 1,
-        "top_severity": "Critical",
-        "top_score": 100.0,
-        "why_missed": null
+        "incidents": 301
       },
       {
-        "campaign": "C2",
-        "name": "SSH brute force leading to account compromise",
-        "events": 82,
-        "detected": true,
-        "detected_by": [
-          "ML-ANOMALY",
-          "R-BRUTE",
-          "R-BRUTE-OK",
-          "R-IOC"
-        ],
-        "alerts": 92,
-        "incidents": 1,
-        "top_severity": "Critical",
-        "top_score": 81.8,
-        "why_missed": null
-      },
-      {
-        "campaign": "C3",
-        "name": "VPN password spray",
-        "events": 40,
-        "detected": true,
-        "detected_by": [
-          "ML-ANOMALY",
-          "R-BRUTE",
-          "R-SPRAY"
-        ],
-        "alerts": 35,
-        "incidents": 1,
-        "top_severity": "High",
-        "top_score": 70.4,
-        "why_missed": null
-      },
-      {
-        "campaign": "C4",
-        "name": "IoT camera exploitation and botnet C2",
-        "events": 60,
-        "detected": true,
-        "detected_by": [
-          "ML-ANOMALY",
-          "R-IDS"
-        ],
-        "alerts": 4,
-        "incidents": 1,
-        "top_severity": "High",
-        "top_score": 71.8,
-        "why_missed": null
-      },
-      {
-        "campaign": "C5",
-        "name": "Low-and-slow port scan (hard)",
-        "events": 360,
-        "detected": true,
+        "tactic": "Reconnaissance",
+        "events": 2095,
+        "windows": 1395,
+        "windows_detected": 0.264,
+        "events_cited_as_evidence": 0.057,
         "detected_by": [
           "ML-ANOMALY"
         ],
-        "alerts": 25,
-        "incidents": 1,
-        "top_severity": "Low",
-        "top_score": 36.5,
-        "why_missed": null
+        "incidents": 57
       },
       {
-        "campaign": "C6",
-        "name": "Slow data exfiltration over HTTPS (hard)",
-        "events": 16,
-        "detected": false,
-        "detected_by": [],
-        "alerts": 0,
-        "incidents": 0,
-        "top_severity": null,
-        "top_score": null,
-        "why_missed": "~4 MB per hour over HTTPS to an unlisted host looks like normal web uploads"
+        "tactic": "Initial Access",
+        "events": 402,
+        "windows": 388,
+        "windows_detected": 0.418,
+        "events_cited_as_evidence": 0.082,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 26
       },
       {
-        "campaign": "C7",
-        "name": "Valid-account misuse with stolen credentials (hard)",
-        "events": 6,
-        "detected": false,
+        "tactic": "Defense Evasion",
+        "events": 230,
+        "windows": 228,
+        "windows_detected": 0.307,
+        "events_cited_as_evidence": 0.035,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 8
+      },
+      {
+        "tactic": "Persistence",
+        "events": 230,
+        "windows": 228,
+        "windows_detected": 0.307,
+        "events_cited_as_evidence": 0.035,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 8
+      },
+      {
+        "tactic": "Privilege Escalation",
+        "events": 230,
+        "windows": 228,
+        "windows_detected": 0.307,
+        "events_cited_as_evidence": 0.035,
+        "detected_by": [
+          "ML-ANOMALY"
+        ],
+        "incidents": 8
+      },
+      {
+        "tactic": "Exfiltration",
+        "events": 18,
+        "windows": 17,
+        "windows_detected": 0.0,
+        "events_cited_as_evidence": 0.0,
         "detected_by": [],
-        "alerts": 0,
-        "incidents": 0,
-        "top_severity": null,
-        "top_score": null,
-        "why_missed": "a single successful VPN login with valid credentials followed by normal-looking file access matches no rule and is not statistically unusual"
+        "incidents": 0
       }
     ],
     "per_rule": [
       {
         "rule_id": "ML-ANOMALY",
-        "alerts": 72,
-        "true_alerts": 31,
-        "precision": 0.431
+        "alerts": 109,
+        "true_alerts": 69,
+        "precision": 0.633
       },
       {
         "rule_id": "R-BRUTE",
-        "alerts": 25,
-        "true_alerts": 24,
-        "precision": 0.96
-      },
-      {
-        "rule_id": "R-BRUTE-OK",
-        "alerts": 2,
-        "true_alerts": 1,
-        "precision": 0.5
-      },
-      {
-        "rule_id": "R-EXFIL",
-        "alerts": 3,
-        "true_alerts": 1,
-        "precision": 0.333
-      },
-      {
-        "rule_id": "R-IDS",
-        "alerts": 11,
-        "true_alerts": 11,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-IOC",
-        "alerts": 263,
-        "true_alerts": 263,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-LATERAL",
-        "alerts": 3,
-        "true_alerts": 3,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-SCAN",
-        "alerts": 3,
-        "true_alerts": 3,
-        "precision": 1.0
-      },
-      {
-        "rule_id": "R-SPRAY",
-        "alerts": 17,
-        "true_alerts": 17,
+        "alerts": 1342,
+        "true_alerts": 1342,
         "precision": 1.0
       }
     ],
     "correlation": {
-      "alerts": 399,
-      "incidents": 48,
-      "alert_reduction": 0.88,
-      "true_incidents": 5,
-      "false_positive_incidents": 43,
-      "true_attack_alerts": 354,
-      "true_attack_alerts_per_incident": 70.8,
-      "incidents_mixing_campaigns": 0,
-      "false_positive_sources": {
-        "Behavioural anomaly (Isolation Forest)": 40,
-        "Large outbound data transfer": 2,
-        "Brute-force authentication": 1
-      }
+      "alerts": 1451,
+      "incidents": 337,
+      "alert_reduction": 0.768,
+      "true_incidents": 307,
+      "false_positive_incidents": 30
     },
     "prioritisation": {
-      "precision_at_k": 0.8,
-      "k": 5,
-      "mean_score_true": 72.1,
-      "mean_score_false": 39.1,
-      "top5": [
-        {
-          "id": "INC-0022",
-          "score": 100.0,
-          "truth": "C1",
-          "title": "Multi-stage attack - web-srv-01 (Reconnaissance > Initial Access > Command and Control > Lateral Movement > Exfiltration > Anomaly)"
-        },
-        {
-          "id": "INC-0023",
-          "score": 81.8,
-          "truth": "C2",
-          "title": "Multi-stage attack - db-srv-01 (Reconnaissance > Initial Access > Credential Access > Anomaly)"
-        },
-        {
-          "id": "INC-0045",
-          "score": 72.2,
-          "truth": "benign",
-          "title": "Brute-force authentication - ws-0042 (Initial Access > Credential Access > Anomaly)"
-        },
-        {
-          "id": "INC-0025",
-          "score": 71.8,
-          "truth": "C4",
-          "title": "IDS exploit signature - camera-017 (Initial Access > Anomaly)"
-        },
-        {
-          "id": "INC-0044",
-          "score": 70.4,
-          "truth": "C3",
-          "title": "Password spray - vpn-gw-01 (Credential Access > Anomaly)"
-        }
-      ]
-    },
-    "triage_queue": {
-      "before_alerts": 399,
-      "after_incidents": 48,
-      "after_high_or_critical": 5
+      "k": 307,
+      "precision_at_k": 0.912,
+      "mean_score_true": 39.4,
+      "mean_score_false": 29.4,
+      "severity_true": {
+        "Medium": 268,
+        "Low": 39
+      },
+      "severity_false": {
+        "Low": 30
+      }
     },
     "ai_reliability": {
       "mode": [
         "offline-evidence-template"
       ],
       "mean_supported_sentence_rate": 1.0,
-      "sentences_checked": 490,
+      "sentences_checked": 3513,
       "unsupported_sentences": 0
     }
+  },
+  "llm_reliability": {
+    "model": "groq:openai/gpt-oss-120b",
+    "incidents": 20,
+    "failed_calls": 0,
+    "sentences": 327,
+    "unsupported_sentences": 0,
+    "sentence_support_rate": 1.0,
+    "examples_of_unsupported": []
   }
 }

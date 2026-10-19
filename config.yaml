@@ -1,0 +1,54 @@
+# SecureOps AI - default configuration.
+# Everything here can be changed at runtime on the dashboard's Settings page; those
+# changes are stored in the database and override these defaults.
+
+network:
+  # "auto" = RFC 1918 ranges plus any /16 that most observed hosts share.
+  # Or list your own CIDRs, e.g. ["10.0.0.0/8", "192.168.1.0/24"].
+  home_networks: auto
+  # A host that this share of active hosts talks to is shared infrastructure (DNS, DC, proxy)
+  # and is never used on its own to link unrelated alerts.
+  hub_fan_in_share: 0.25
+  allowlist_sources: []          # e.g. your authorised vulnerability scanner
+
+detection:
+  scan:            {window: 5min, distinct_ports: 15, distinct_hosts: 25}   # Zeek scan-policy style
+  bruteforce:      {window: 5min, attempts: 10, ignore_services: [dns, ntp, dhcp]}   # cf. fail2ban 5 in 10 min
+  ssh_bruteforce:  {window: 5min, failures: 5}
+  lateral:         {window: 10min, distinct_hosts: 10, ports: [22, 135, 445, 3389, 5985, 5986]}
+  exfil:           {bytes_per_conn: 104857600}
+  anomaly:         {contamination: 0.005, baseline_hours: 48, n_estimators: 200}
+
+correlation:
+  gap_minutes: 120
+
+scoring:
+  weights: {threat: 0.45, asset: 0.25, exposure: 0.20, spread: 0.10}
+  bands: {Critical: 80, High: 60, Medium: 40}
+
+sla_hours: {Critical: 1, High: 4, Medium: 24, Low: 72}
+
+# Analysts who can own cases. Add your team on the Settings page.
+team: []
+
+intel:
+  refresh_hours: 6
+  feeds:
+    feodo:   https://feodotracker.abuse.ch/downloads/ipblocklist.json
+    spamhaus_drop: https://www.spamhaus.org/drop/drop_v4.json
+    urlhaus: https://urlhaus.abuse.ch/downloads/csv_recent/
+    cisa_kev: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+    epss: https://api.first.org/data/v1/epss
+    nvd: https://services.nvd.nist.gov/rest/json/cves/2.0
+    mitre_attack: https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json
+
+replay:
+  # Real labelled Zeek conn logs (University of West Florida, CC BY 4.0).
+  source_url: https://datasets.uwf.edu/data/UWF-ZeekData24/csv/
+  history_days: 7      # days loaded at first start; the rest streams live
+  step_minutes: 30     # dataset time advanced per live-stream tick
+
+ai:
+  provider: auto       # auto | groq | ollama | offline
+  groq_model: auto     # auto = largest chat model Groq currently offers (asked live), or a model id
+  ollama_model: llama3.2

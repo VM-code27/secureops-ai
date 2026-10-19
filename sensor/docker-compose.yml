@@ -1,0 +1,37 @@
+# SecureOps sensor: Zeek + Suricata watch a real interface; the shipper streams their logs to the API.
+# Linux / Raspberry Pi / WSL2 only (host networking). Usage:  cp .env.example .env && docker compose up -d
+services:
+  zeek:
+    image: zeek/zeek:lts
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    working_dir: /logs/zeek
+    volumes: ["./logs:/logs"]
+    command: ["zeek", "-C", "-i", "${IFACE}", "local", "LogAscii::use_json=T"]
+    restart: unless-stopped
+
+  suricata:
+    image: jasonish/suricata:latest
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
+    volumes: ["./logs/suricata:/var/log/suricata", "suricata-rules:/var/lib/suricata"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["suricata-update --no-test || true; exec suricata -i ${IFACE}"]
+    restart: unless-stopped
+
+  shipper:
+    image: python:3.12-slim
+    network_mode: host
+    volumes: ["./logs:/logs:ro", "./shipper.py:/shipper.py:ro", "shipper-state:/state"]
+    environment:
+      API_URL: ${API_URL}
+      API_TOKEN: ${API_TOKEN}
+      SENSOR_NAME: ${SENSOR_NAME}
+      LOG_DIR: /logs
+      STATE_FILE: /state/offsets.json
+    command: ["sh", "-c", "pip install -q requests && python /shipper.py"]
+    restart: unless-stopped
+
+volumes:
+  suricata-rules: {}
+  shipper-state: {}

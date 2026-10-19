@@ -1,64 +1,67 @@
 # Free deployment guide
 
-Everything here runs on free tiers with no credit card.
+Everything runs on free tiers with no credit card. Choose how far you want to go:
 
-| Piece | Free service | Required? |
+| Level | What you get | Services |
 |---|---|---|
-| Code + CI | GitHub + GitHub Actions | yes |
-| Dashboard (the portfolio link) | **Streamlit Community Cloud** | yes |
-| LLM for the AI assistant | Groq free API key | optional (offline engine otherwise) |
-| Persistent database | Neon free Postgres | optional (SQLite resets when the app restarts) |
-| REST API | Render free web service | optional |
+| **1. Portfolio demo** (10 min) | Dashboard streaming real UWF Zeek data, live threat intel / NVD / KEV / EPSS / ATT&CK, log upload, case management | GitHub + Streamlit Community Cloud |
+| **2. + AI and persistence** (+5 min) | LLM explanations; cases, settings and audit trail survive restarts | + Groq key + Neon Postgres |
+| **3. + Live sensor** (+20 min) | Your own Zeek/Suricata sensor streaming real traffic into the same dashboard | + Render (API) + a Linux box / Raspberry Pi / WSL2 |
 
-> **Why not Vercel?** Vercel is built for frontends and short serverless functions. This app needs a long-running Python process (scikit-learn, websockets for Streamlit, a database), so Streamlit Community Cloud is the right free host. If you still want a `vercel.app` link, put a one-page landing site there that links to the Streamlit app.
+> **Why not Vercel?** Vercel hosts websites and short serverless functions. This app is a long-running Python
+> process (Streamlit websockets, scikit-learn, a database, background streaming), which is exactly what Streamlit
+> Community Cloud and Render provide for free.
 
-## 1. Push to GitHub
+## Level 1 - Dashboard on Streamlit Community Cloud
 
-```bash
-git init && git add . && git commit -m "SecureOps AI"
-git branch -M main
-git remote add origin https://github.com/<you>/secureops-ai.git
-git push -u origin main
-```
-The **Actions** tab will run lint, tests, the evaluation and a Docker build on every push.
+1. Push the repo to GitHub:
+   ```bash
+   git remote add origin https://github.com/<you>/secureops-ai.git
+   git push -u origin main
+   ```
+2. Go to <https://share.streamlit.io>, then **Create app → Deploy a public app from GitHub**. Choose your repo, branch `main` and main file `streamlit_app.py`.
+3. **Advanced settings**: set Python to **3.12**.
+4. Deploy. The first visit builds everything from live sources (UWF dataset, abuse.ch, Spamhaus, CISA KEV and MITRE ATT&CK), which takes about 1–2 minutes and shows its progress. After that, open **Live data** and turn on **Auto-stream**.
 
-## 2. Deploy the dashboard (Streamlit Community Cloud)
+## Level 2 - LLM + persistent database
 
-1. Go to <https://share.streamlit.io> and sign in with GitHub.
-2. **Create app → Deploy a public app from GitHub**, then choose repo `secureops-ai`, branch `main`, main file `streamlit_app.py`.
-3. **Advanced settings**: set Python version **3.12**. Optionally paste secrets (see steps 3 and 4).
-4. Pick a custom subdomain, e.g. `secureops-ai.streamlit.app`, and deploy.
-
-On the first visit the app builds its lab database (about 10 seconds). Free apps sleep after a period without traffic; the next visitor wakes them up.
-
-## 3. (Optional) Enable the LLM: Groq, free
-
-1. Create a key at <https://console.groq.com/keys>.
-2. In Streamlit Cloud open **App → Settings → Secrets** and add:
+1. **Groq** (free): create a key at <https://console.groq.com/keys>.
+2. **Neon** (free Postgres): create a project at <https://neon.tech> and copy the connection string.
+3. In Streamlit Cloud open **App → Settings → Secrets** and paste:
    ```toml
    GROQ_API_KEY = "gsk_..."
-   ```
-The sidebar will then show *AI assistant: LLM: Groq*, and **Regenerate with LLM** on any incident produces an LLM explanation that is still citation-verified. If Groq retires the default model, set `GROQ_MODEL` to a current one from their model list.
-
-## 4. (Optional) Keep data between restarts: Neon, free
-
-1. Create a project at <https://neon.tech> and copy the connection string.
-2. Add it to the Streamlit secrets:
-   ```toml
    DATABASE_URL = "postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require"
    ```
-Case assignments, resolutions and audit history now survive app restarts, and the API can share the same database.
+   The app restarts and rebuilds once into Neon. From then on, everything persists.
 
-## 5. (Optional) Deploy the REST API: Render, free
+The Groq model is picked automatically from Groq's live model list (models get retired). To pin one, add `GROQ_MODEL = "<model id>"`.
 
-1. <https://render.com> → **New → Blueprint** → select the repo (it reads `render.yaml`).
-2. Set `DATABASE_URL` (the same Neon URL, so the API and dashboard share cases) and optionally `GROQ_API_KEY`.
-3. Interactive docs will be at `https://secureops-api.onrender.com/docs`. The free tier sleeps after 15 minutes idle, so the first request takes about 30 to 60 seconds.
+## Level 3 - Live sensor streaming real traffic
 
-**Alternative:** Hugging Face Spaces → New Space → **Docker** → push this repo. The included `Dockerfile` serves the dashboard on the port Spaces provides.
+The sensor pushes logs to the API, and the API writes them to the same Neon database the dashboard reads.
 
-## 6. Final touches for the portfolio
+1. **API on Render** (free): <https://render.com>, then **New → Blueprint**, then select the repo (it reads `render.yaml`).
+   - Set `DATABASE_URL` to the same Neon URL.
+   - Render generates `SECUREOPS_API_TOKEN` for you; copy it.
+   - Optionally set `GROQ_API_KEY`.
+   - Check that `https://<name>.onrender.com/health` responds. Interactive docs are at `/docs`.
+   - The free tier sleeps after 15 minutes idle. The sensor's next push wakes it, and the shipper retries automatically.
+2. Add `API_PUBLIC_URL = "https://<name>.onrender.com"` to the Streamlit secrets so the dashboard shows the right instructions.
+3. **Sensor** (any Linux machine, Raspberry Pi 4/5, or WSL2 on Windows with Docker):
+   ```bash
+   git clone https://github.com/<you>/secureops-ai.git && cd secureops-ai/sensor
+   cp .env.example .env   # IFACE=eth0, API_URL=https://<name>.onrender.com, API_TOKEN=<token from Render>
+   docker compose up -d   # Zeek + Suricata (with ET Open rules) + log shipper
+   docker compose logs -f shipper
+   ```
+   New connections show up in the dashboard as `live` data within seconds. Detections, incidents, asset discovery and threat-intel matches all run on them.
+4. **No Linux box?** Capture traffic with Wireshark on Windows and save it as `.pcap`. Then either run `sensor/process_pcap.sh capture.pcap` on any machine with Docker, or upload the resulting `conn.log` / `eve.json` on **Live data → Upload logs**.
 
-- Replace the two placeholder links at the top of `README.md` with your real URLs.
-- Pin the repo on your GitHub profile and add the live link to your résumé and LinkedIn.
-- Demo script (2 minutes): **Live attack demo → Inject** → show detect / correlate / prioritise / explain → **Assign** → **Open case** → show citations and the audit trail → **Evaluation** page, including the scenarios it misses.
+> Only monitor networks you own or are authorised to monitor.
+
+## Make it yours
+
+- **Settings page:** set your team (case owners), home networks, allow-listed sources, thresholds, scoring weights and SLAs.
+- **Assets page:** download the discovered inventory as CSV, add hostnames, criticality, owners and CPEs, re-upload it, then click **Look up CVEs (live NVD)**. Incidents are re-scored with real CVSS, CISA KEV and EPSS exposure.
+- **Evaluation:** `python -m secureops.evaluate --llm-sample 20` (with `GROQ_API_KEY` set) regenerates `reports/` with measured LLM citation accuracy.
+- Replace the placeholder links at the top of `README.md` with your live URLs.

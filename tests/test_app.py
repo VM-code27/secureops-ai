@@ -1,30 +1,32 @@
-"""Headless smoke test of every dashboard page (Streamlit AppTest)."""
+"""Headless smoke test of every dashboard page (Streamlit AppTest) on real fixture data."""
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 APP = Path(__file__).resolve().parent.parent / "streamlit_app.py"
+PAGES = ["Overview", "Incident queue", "Investigate", "Assets", "Threat intel", "Evaluation", "Settings", "About"]
 
-PAGES = ["Overview", "Incident queue", "Investigate", "Live attack demo", "Evaluation", "About"]
 
-
-def _run(page, **state):
+@pytest.mark.parametrize("page", PAGES)
+def test_page_renders(seeded_db, page):
     at = AppTest.from_file(str(APP), default_timeout=120)
     at.session_state["page"] = page
-    for k, v in state.items():
-        at.session_state[k] = v
     at.run()
     assert not at.exception, [e.value for e in at.exception]
-    return at
 
 
-def test_all_pages_render():
-    for p in PAGES:
-        _run(p)
-
-
-def test_live_demo_and_case_flow():
-    at = _run("Live attack demo")
-    at.button[[b.label for b in at.button].index("Inject & run pipeline")].click().run()
-    assert not at.exception, [e.value for e in at.exception]
-    assert any("Prioritise" in m.value for m in at.markdown)
+def test_case_update_from_dashboard(seeded_db):
+    from secureops import db, settings
+    settings.save({"team": ["Priya"]})
+    inc_id = db.list_incidents().iloc[0].incident_id
+    at = AppTest.from_file(str(APP), default_timeout=120)
+    at.session_state["page"] = "Investigate"
+    at.session_state["selected"] = inc_id
+    at.run()
+    owner = next(s for s in at.selectbox if s.label == "Owner")
+    owner.set_value("Priya")
+    next(b for b in at.button if b.label == "Save case").click()
+    at.run()
+    assert not at.exception
+    assert db.get_incident(inc_id)["owner"] == "Priya"

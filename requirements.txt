@@ -6,6 +6,8 @@ sqlalchemy==2.0.51
 requests>=2.31
 joblib>=1.4
 altair>=5.4
+pyyaml>=6.0
+ijson>=3.3
 fastapi==0.146.0
 uvicorn[standard]>=0.30
 psycopg2-binary>=2.9.9

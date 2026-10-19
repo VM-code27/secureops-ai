@@ -1,4 +1,4 @@
-# Full local stack: dashboard + API + PostgreSQL (+ optional local LLM).
+# Full local stack: dashboard + API + PostgreSQL (+ optional local LLM). Sensors: see sensor/.
 #   docker compose up --build                 -> http://localhost:8501  and  http://localhost:8000/docs
 #   docker compose --profile llm up --build   -> also starts Ollama (then: docker compose exec ollama ollama pull llama3.2)
 services:
@@ -14,6 +14,8 @@ services:
       DATABASE_URL: postgresql://secureops:secureops@db:5432/secureops
       OLLAMA_URL: ${OLLAMA_URL:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      SECUREOPS_API_TOKEN: ${SECUREOPS_API_TOKEN:-change-me}
+      API_PUBLIC_URL: http://localhost:8000
     ports: ["8000:8000"]
     depends_on: { db: { condition: service_healthy } }
   dashboard:

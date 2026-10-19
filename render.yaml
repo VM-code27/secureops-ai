@@ -1,4 +1,5 @@
 # Optional: free REST API on Render (https://render.com -> New -> Blueprint -> pick this repo).
+# Point it at the same Neon DATABASE_URL as the dashboard so sensors, API and dashboard share one database.
 services:
   - type: web
     name: secureops-api
@@ -12,5 +13,7 @@ services:
         value: 3.12.10
       - key: DATABASE_URL
         sync: false
+      - key: SECUREOPS_API_TOKEN
+        generateValue: true
       - key: GROQ_API_KEY
         sync: false
