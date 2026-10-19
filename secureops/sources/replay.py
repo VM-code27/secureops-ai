@@ -22,7 +22,13 @@ def _save(**kw):
 
 
 def advance(to: pd.Timestamp, chunk: pd.Timedelta = pd.Timedelta(hours=6), progress=None, use_llm=False) -> dict:
-    """Ingest replay events from the cursor up to `to`, in chunks."""
+    """Ingest replay events from the cursor up to `to`, in chunks (under the pipeline lock, so two
+    viewers streaming at once can never replay the same slice twice)."""
+    with db.lock("pipeline"):
+        return _advance(to, chunk, progress, use_llm)
+
+
+def _advance(to, chunk, progress, use_llm) -> dict:
     ev = uwf.load()
     st = state()
     cursor = pd.Timestamp(st["cursor"]) if st.get("cursor") else ev.ts.min().floor("D")
@@ -55,7 +61,12 @@ def bootstrap(progress=None) -> dict:
     return advance(start + pd.Timedelta(days=settings.section("replay")["history_days"]), progress=progress)
 
 
-def step(minutes: int | None = None, use_llm=False) -> dict:
+def step(minutes: int | None = None, use_llm=False, wait: int = 600) -> dict:
+    with db.lock("pipeline", wait=wait):
+        return _step(minutes, use_llm)
+
+
+def _step(minutes: int | None, use_llm) -> dict:
     minutes = minutes or settings.section("replay")["step_minutes"]
     st = state()
     cursor = pd.Timestamp(st["cursor"]) if st.get("cursor") else uwf.load().ts.min().floor("D")

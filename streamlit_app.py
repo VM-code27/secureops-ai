@@ -215,8 +215,11 @@ def live_page():
         if auto and use_replay and rs.get("active") and not rs["finished"]:
             last = replay.state().get("last_step_wall")
             if not last or (db.now() - pd.Timestamp(last)).total_seconds() >= 3.5:  # one stream for all viewers
-                replay.step()
-                db.set_meta("replay", {**replay.state(), "last_step_wall": db.now().isoformat()})
+                try:
+                    replay.step(wait=2)  # if a sensor batch or another viewer is ingesting, skip this tick
+                    db.set_meta("replay", {**replay.state(), "last_step_wall": db.now().isoformat()})
+                except TimeoutError:
+                    pass
                 rs = replay.summary()
         inc = load_incidents()
         # Notifications: new incidents (or escalations) since this viewer last looked.

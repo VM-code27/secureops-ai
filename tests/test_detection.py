@@ -85,3 +85,26 @@ def test_verifier_flags_uncited_and_invented_ids():
     v = assistant.verify("The host 10.0.0.5 beaconed out [EVT-1, AST-10.0.0.5]. It was compromised by magic. "
                          "The attacker used account bob [EVT-999].", ctx)
     assert [c["supported"] for c in v["checks"]] == [True, False, False]
+
+
+def test_concurrent_writers_do_not_collide(fresh_db):
+    """Sensors, API workers and dashboard sessions ingest at the same time without duplicate IDs."""
+    import threading
+
+    batches = [normalise(pd.DataFrame([dict(ts=T0 + timedelta(seconds=10 * i + k), src_ip=f"10.0.{k}.5",
+                                            dst_ip="10.0.0.9", dst_port=4848, proto="tcp", conn_state="SF")
+                                       for i in range(15)]), "zeek_conn", "unit", "live") for k in range(6)]
+    errors = []
+
+    def run(b):
+        try:
+            pipeline.ingest(b)
+        except Exception as exc:  # pragma: no cover - the assertion below reports it
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run, args=(b,)) for b in batches]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert not errors
+    assert db.count("events") == 6 * 15
+    assert db.read_events_sql("SELECT COUNT(DISTINCT event_id) AS n FROM events").n.iloc[0] == 90

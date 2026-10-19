@@ -6,11 +6,21 @@ SecureOps AI is a security operations platform that runs on **real network telem
 
 ![Live threat stream](docs/live-stream.png)
 
+📘 **New to security? Read the plain-language guide: [SecureOps_AI_Documentation.pdf](SecureOps_AI_Documentation.pdf)**. It covers what the system does, where the data comes from, how each model decides, how accurate it really is and where it fails, plus a glossary. Rebuild it after re-running the evaluation with `python docs/build_documentation.py`.
+
+## In plain words
+
+- **It watches network traffic** from a sensor on your network, plus a real recorded attack dataset so there is always something to detect.
+- **It spots attacks** with 8 rules for known attack patterns and an AI model that flags unusual behaviour.
+- **It turns noise into a short to-do list:** related warnings become one case (77% fewer items to read in testing), ranked by real risk.
+- **It explains each case in plain English**, citing the exact log lines behind every sentence. You can also chat with it ("what is happening on my network?").
+- **It notifies you** with pop-ups and a breach banner the moment a serious case appears. A human always decides what to do.
+
 ## Nothing is hard-coded or simulated
 
 | Input | Where it comes from |
 |---|---|
-| Network events | **Real Zeek logs** from [UWF-ZeekData24](https://datasets.uwf.edu) (MITRE ATT&CK-labelled), streamed live. **Your own Zeek + Suricata sensor** pushing over the API (`sensor/`). Uploaded `conn.log` / `ssh.log` / `eve.json`. |
+| Network events | **Real Zeek logs** from [UWF-ZeekData24](https://datasets.uwf.edu) (MITRE ATT&CK-labelled), streamed live. **Your own Zeek + Suricata sensor** pushing over the API (`sensor/`), or log files posted to `/ingest/zeek` and `/ingest/suricata`. |
 | Assets | **Discovered from traffic**: hosts, services, fan-in/out, and shared infrastructure. Criticality is inferred, or set by your **inventory CSV**. |
 | Vulnerabilities | **NVD API** (CPE → CVE, CVSS), **CISA KEV** (exploited in the wild), **FIRST EPSS** (exploit probability), all fetched live. |
 | Threat intel | **abuse.ch Feodo Tracker** (botnet C2), **abuse.ch URLhaus**, **Spamhaus DROP**, refreshed automatically. |
@@ -30,7 +40,7 @@ SecureOps AI is a security operations platform that runs on **real network telem
 ## How it works
 
 ```
-Zeek / Suricata (replay · sensor push · upload)
+Zeek / Suricata (dataset replay · sensor push over the API)
    → normalise → asset discovery
    → detection: 8 ATT&CK-mapped rules + Isolation Forest (per host-hour, trained unsupervised on the first 48 h)
    → streaming correlation: union-find on shared entities within 120 min; new alerts join or merge open incidents
@@ -56,13 +66,20 @@ The full 18-day UWF replay runs through the production pipeline. The **test set 
 - UWF recorded benign and attack traffic in different weeks, so they are overlaid day by day (time of day preserved). All hosts sit in one /16, so threat-intel and exfiltration rules are exercised by sensor data and tests rather than by this dataset.
 - Triage time was not measured with real analysts. The dashboard measures time-to-acknowledge and time-to-resolve from real case actions.
 
+## Reliability and safety
+
+- **Concurrent writers are safe.** Sensors, API workers and any number of dashboard viewers can ingest at the same time. A database-level lock serialises the pipeline (tested with simultaneous writers), so event IDs never collide and a replay slice is never ingested twice.
+- **A human stays in charge.** Response actions are recorded for approval and never executed automatically. Every case change is audited.
+- **Secrets stay out of code.** Keys live in `.streamlit/secrets.toml` (git-ignored) or the host's secret store. API writes need `SECUREOPS_API_TOKEN`.
+- **LLM privacy.** With a Groq key, the evidence behind a question is sent to Groq to write the answer. Without a key, nothing leaves the system.
+
 ## Run locally
 
 ```bash
 pip install -r requirements.txt
 streamlit run streamlit_app.py          # dashboard  -> http://localhost:8501 (first start downloads live data, ~1 min)
 SECUREOPS_API_TOKEN=change-me uvicorn api.main:app --reload   # API -> http://localhost:8000/docs
-pytest -q                               # 24 tests on real Zeek/Suricata samples, no network needed
+pytest -q                               # 21 tests on real Zeek/Suricata samples, no network needed
 python -m secureops.evaluate            # metrics -> reports/
 ```
 

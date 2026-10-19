@@ -21,7 +21,7 @@ Everything runs on free tiers with no credit card. Choose how far you want to go
    ```
 2. Go to <https://share.streamlit.io>, then **Create app → Deploy a public app from GitHub**. Choose your repo, branch `main` and main file `streamlit_app.py`.
 3. **Advanced settings**: set Python to **3.12**.
-4. Deploy. The first visit builds everything from live sources (UWF dataset, abuse.ch, Spamhaus, CISA KEV and MITRE ATT&CK), which takes about 1–2 minutes and shows its progress. After that, open **Live data** and turn on **Auto-stream**.
+4. Deploy. The first visit builds everything from live sources (UWF dataset, abuse.ch, Spamhaus, CISA KEV and MITRE ATT&CK), which takes about 1–2 minutes and shows its progress. The **Live** screen then streams automatically.
 
 ## Level 2 - LLM + persistent database
 
@@ -60,13 +60,13 @@ The sensor pushes logs to the API, and the API writes them to the same Neon data
    scan raised R-SCAN, an Nmap user-agent request raised Suricata "ET SCAN Possible Nmap User-Agent Observed"
    (severity 1), and Docker Desktop's own control traffic to port 2376 was flagged as brute force. That is a real
    false positive, so allow-list it from the incident page.
-4. **No Linux box?** Capture traffic with Wireshark on Windows and save it as `.pcap`. Then either run `sensor/process_pcap.sh capture.pcap` on any machine with Docker, or upload the resulting `conn.log` / `eve.json` on **Live data → Upload logs**.
+4. **No Linux box?** Capture traffic with Wireshark on Windows and save it as `.pcap`. Then either run `sensor/process_pcap.sh capture.pcap` on any machine with Docker, or post the resulting `conn.log` / `eve.json` to the API (`/ingest/zeek`, `/ingest/suricata`).
 
 > Only monitor networks you own or are authorised to monitor.
 
 ## Make it yours
 
-- **Settings page:** set your team (case owners), home networks, allow-listed sources, thresholds, scoring weights and SLAs.
-- **Assets page:** download the discovered inventory as CSV, add hostnames, criticality, owners and CPEs, re-upload it, then click **Look up CVEs (live NVD)**. Incidents are re-scored with real CVSS, CISA KEV and EPSS exposure.
+- **Settings** (top-right button): set your name, analyst team (case owners) and allow-listed sources. Thresholds, home networks, scoring weights and SLAs are in `config.yaml`.
+- **Asset inventory:** `GET /assets` returns the discovered hosts. Add hostnames, criticality, owners and CPEs in a CSV, `POST` it to `/assets/inventory`, then `POST /assets/cves` for a live NVD lookup. Incidents are re-scored with real CVSS, CISA KEV and EPSS exposure.
 - **Evaluation:** `python -m secureops.evaluate --llm-sample 20` (with `GROQ_API_KEY` set) regenerates `reports/` with measured LLM citation accuracy.
 - Replace the placeholder links at the top of `README.md` with your live URLs.

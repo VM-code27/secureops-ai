@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import threading
+import time
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
 import pandas as pd
@@ -155,6 +159,10 @@ vulns = Table(
 )
 
 meta = Table("meta", metadata, Column("key", String(64), primary_key=True), Column("value", Text))
+
+# Cross-process mutex (dashboard sessions, API workers and sensors all write to one database).
+locks = Table("locks", metadata, Column("name", String(32), primary_key=True), Column("holder", String(64)),
+              Column("until", DateTime(timezone=True)))
 Index("ix_alerts_rule_ts", alerts.c.rule_id, alerts.c.ts)
 
 STATUSES = ["New", "Investigating", "Contained", "Resolved", "False positive"]
@@ -198,6 +206,48 @@ def ensure_schema():
 def reset():
     metadata.drop_all(engine())
     metadata.create_all(engine())
+
+
+_held = threading.local()
+
+
+@contextmanager
+def lock(name: str = "pipeline", ttl: int = 300, wait: int = 600):
+    """Database-backed lock so only one writer runs the pipeline at a time, across processes.
+    Re-entrant within a thread; expires after `ttl` seconds if its holder dies."""
+    held = getattr(_held, "names", None)
+    if held is None:
+        held = _held.names = set()
+    if name in held:
+        yield
+        return
+    ensure_schema()
+    me = uuid.uuid4().hex
+    with engine().begin() as c:
+        if not c.execute(select(locks.c.name).where(locks.c.name == name)).first():
+            try:
+                c.execute(insert(locks).values(name=name, holder=None, until=now()))
+            except Exception:
+                pass
+    deadline = time.monotonic() + wait
+    while True:
+        t = now()
+        with engine().begin() as c:
+            got = c.execute(update(locks).where(locks.c.name == name,
+                                                (locks.c.holder.is_(None)) | (locks.c.until < t))
+                            .values(holder=me, until=t + timedelta(seconds=ttl))).rowcount
+        if got == 1:
+            break
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"could not acquire the {name} lock")
+        time.sleep(0.2)
+    held.add(name)
+    try:
+        yield
+    finally:
+        held.discard(name)
+        with engine().begin() as c:
+            c.execute(update(locks).where(locks.c.name == name, locks.c.holder == me).values(holder=None))
 
 
 def get_meta(key: str, default=None):
