@@ -260,6 +260,11 @@ def read_events(where: str = "", params: dict | None = None) -> pd.DataFrame:
     return _fix_ts(df, ["ts"])
 
 
+def read_events_sql(sql: str, params: dict | None = None) -> pd.DataFrame:
+    """Aggregate / custom queries over events (SQL portable between SQLite and PostgreSQL)."""
+    return pd.read_sql_query(text(sql), engine(), params=params or {})
+
+
 def events_between(start, end) -> pd.DataFrame:
     return read_events("WHERE ts >= :a AND ts < :b ORDER BY ts", {"a": py(start), "b": py(end)})
 

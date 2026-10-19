@@ -84,6 +84,19 @@ def fmt_delta(td) -> str:
     return f"{sign}{d}d {h}h" if d else f"{sign}{h}h {rem // 60}m"
 
 
+def _api_url() -> str | None:
+    """Public API address if configured, else a locally running API (docker compose / uvicorn)."""
+    if os.getenv("API_PUBLIC_URL"):
+        return os.getenv("API_PUBLIC_URL")
+    try:
+        import requests
+        if requests.get("http://localhost:8000/health", timeout=1).ok:
+            return "http://localhost:8000"
+    except Exception:
+        pass
+    return None
+
+
 def ago(ts) -> str:
     return "never" if not ts else fmt_delta(db.now() - pd.Timestamp(ts)) + " ago"
 
@@ -375,7 +388,7 @@ elif page == "Investigate":
 # =============================================================== LIVE DATA
 elif page == "Live data":
     st.title("Live data")
-    t1, t2, t3 = st.tabs(["Replay stream (real dataset)", "Upload logs", "Connect a sensor"])
+    t3, t1, t2 = st.tabs(["Live sensor", "Replay stream (real dataset)", "Upload logs"])
     with t1:
         info = uwf.info()
         rs = replay.state()
@@ -433,26 +446,80 @@ elif page == "Live data":
                 st.success(f"{f.name}: {kind} → {r['events']:,} events, {r['alerts']} alerts, "
                            f"{len(r['new_incidents'])} new incident(s) {', '.join(r['new_incidents'][:5])}")
     with t3:
-        api_url = os.getenv("API_PUBLIC_URL", "https://<your-api>.onrender.com")
-        st.markdown(f"""
-Run **Zeek + Suricata** on any Linux machine, Raspberry Pi or WSL2 and stream their logs here in real time.
-The sensor kit is in the repository's `sensor/` folder:
+        api_url = _api_url()
+        auto_live = st.toggle("Auto-refresh (every 5 s)", value=True, key="live_auto")
+
+        @st.fragment(run_every=5 if auto_live else None)
+        def _live():
+            now_ = db.now()
+            sensors = db.read_events_sql(
+                "SELECT sensor, COUNT(*) AS events, MAX(ts) AS last_event, "
+                "SUM(CASE WHEN source = 'suricata_alert' THEN 1 ELSE 0 END) AS ids_alerts "
+                "FROM events WHERE dataset = 'live' GROUP BY sensor")
+            if sensors.empty:
+                st.info("No live sensor data yet. Start a sensor (instructions below) or upload logs - events appear here "
+                        "within seconds.", icon=":material/sensors_off:")
+            else:
+                sensors["last_event"] = pd.to_datetime(sensors.last_event, utc=True, format="mixed")
+                age = (now_ - sensors.last_event).dt.total_seconds()
+                sensors["status"] = ["● streaming" if a < 120 else "○ idle" for a in age]
+                sensors["last seen"] = [fmt_delta(pd.Timedelta(seconds=a)) + " ago" for a in age]
+                recent = db.read_events_sql("SELECT ts, source FROM events WHERE dataset = 'live' AND ts >= :t",
+                                            {"t": db.py(now_ - pd.Timedelta(minutes=30))})
+                recent["ts"] = pd.to_datetime(recent.ts, utc=True, format="mixed")
+                live_alerts = db.read_alerts()
+                live_alerts = live_alerts[live_alerts.dataset == "live"]
+                live_inc = incidents[incidents.dataset == "live"]
+                c = st.columns(5)
+                c[0].metric("Sensors streaming", f"{int((age < 120).sum())} / {len(sensors)}")
+                c[1].metric("Live events", f"{int(sensors.events.sum()):,}")
+                c[2].metric("Events, last 5 min", f"{int((recent.ts >= now_ - pd.Timedelta(minutes=5)).sum()):,}")
+                c[3].metric("Live alerts", f"{len(live_alerts):,}")
+                c[4].metric("Open live incidents", int((~live_inc.status.isin(["Resolved", "False positive"])).sum()))
+                st.dataframe(sensors[["status", "sensor", "events", "ids_alerts", "last seen"]], hide_index=True,
+                             width="stretch")
+                if len(recent):
+                    per_min = recent.assign(minute=recent.ts.dt.floor("min")).groupby(["minute", "source"]).size()                         .reset_index(name="events")
+                    srcs = sorted(per_min.source.unique())
+                    chart = alt.Chart(per_min, title="Events per minute, last 30 minutes (UTC)").mark_bar(
+                        stroke=SURFACE, strokeWidth=1).encode(
+                        x=alt.X("utchoursminutes(minute):O", title=None, axis=alt.Axis(labelAngle=0, labelOverlap=True)),
+                        y=alt.Y("sum(events):Q", title=None, axis=alt.Axis(tickCount=4)),
+                        color=alt.Color("source:N", scale=alt.Scale(domain=srcs, range=SERIES[:len(srcs)]), title=None),
+                        tooltip=[alt.Tooltip("utchoursminutes(minute):O", title="minute (UTC)"), "source", "events"])
+                    st.altair_chart(theme(chart, 220), width="stretch")
+                left, right = st.columns([3, 2])
+                with left:
+                    st.markdown("**Latest live alerts**")
+                    la = live_alerts.sort_values("ts", ascending=False).head(15)
+                    st.dataframe(la[["ts", "rule_name", "src_ip", "dst_ip", "incident_id", "description"]], hide_index=True,
+                                 width="stretch", height=300)
+                with right:
+                    st.markdown("**Live incidents**")
+                    for r in live_inc.sort_values("last_seen", ascending=False).head(6).itertuples():
+                        if st.button(f"{SEV_ICON[r.severity]} {r.incident_id} · {r.score:.0f} · {r.title[:60]}",
+                                     key=f"live_{r.incident_id}", width="stretch"):
+                            select_incident(r.incident_id)
+                            st.rerun()
+        _live()
+
+        with st.expander("Connect a sensor", expanded=not db.count("events", "WHERE dataset = 'live'")):
+            shown = api_url or "https://<your-api>.onrender.com"
+            st.markdown(f"""
+Run **Zeek + Suricata** on a Linux machine, Raspberry Pi, WSL2 or Docker Desktop and stream their logs here in real time
+with the kit in the repository's `sensor/` folder. API for this dashboard: **{api_url or "not detected - deploy it (DEPLOY.md, level 3) and set API_PUBLIC_URL"}**.
 
 ```bash
 cd sensor
-cp .env.example .env      # set IFACE, API_URL={api_url}, API_TOKEN
+cp .env.example .env      # IFACE=eth0, API_URL={shown}, API_TOKEN=<SECUREOPS_API_TOKEN>
 docker compose up -d       # Zeek + Suricata + log shipper
+docker compose logs -f shipper
 ```
 
-The shipper tails `conn.log`, `ssh.log`, `software.log` and `eve.json` and POSTs new lines to
-`{api_url}/ingest/zeek` and `/ingest/suricata` with your `SECUREOPS_API_TOKEN`.
-No sensor? Capture with Wireshark/tcpdump and run `sensor/process_pcap.sh capture.pcap`, then upload the logs.""")
-        live = db.read_events("WHERE dataset = 'live' ORDER BY ts DESC LIMIT 2000")
-        if live.empty:
-            st.info("No live sensor data received yet.")
-        else:
-            s = live.groupby("sensor").agg(events=("event_id", "size"), last_event=("ts", "max")).reset_index()
-            st.dataframe(s, hide_index=True, width="stretch")
+On Docker Desktop use `API_URL=http://host.docker.internal:8000` (the sensor then sees container traffic).
+The shipper POSTs new lines of `conn.log`, `ssh.log`, `software.log` and `eve.json` to `/ingest/zeek` and
+`/ingest/suricata`. No sensor? Capture with Wireshark/tcpdump, run `sensor/process_pcap.sh capture.pcap`, and upload
+the logs on the **Upload logs** tab.""")
 
 # =============================================================== ASSETS
 elif page == "Assets":
