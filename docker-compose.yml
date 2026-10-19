@@ -15,7 +15,6 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       SECUREOPS_API_TOKEN: ${SECUREOPS_API_TOKEN:-change-me}
-      API_PUBLIC_URL: http://localhost:8000
     ports: ["8000:8000"]
     depends_on: { db: { condition: service_healthy } }
   dashboard:
