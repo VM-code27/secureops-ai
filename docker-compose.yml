@@ -1,0 +1,29 @@
+# Full local stack: dashboard + API + PostgreSQL (+ optional local LLM).
+#   docker compose up --build                 -> http://localhost:8501  and  http://localhost:8000/docs
+#   docker compose --profile llm up --build   -> also starts Ollama (then: docker compose exec ollama ollama pull llama3.2)
+services:
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: secureops, POSTGRES_PASSWORD: secureops, POSTGRES_DB: secureops }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U secureops"], interval: 3s, retries: 20 }
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    environment: &env
+      DATABASE_URL: postgresql://secureops:secureops@db:5432/secureops
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    ports: ["8000:8000"]
+    depends_on: { db: { condition: service_healthy } }
+  dashboard:
+    build: .
+    environment: *env
+    ports: ["8501:8501"]
+    depends_on: [api]
+  ollama:
+    image: ollama/ollama
+    profiles: [llm]
+    ports: ["11434:11434"]
+    volumes: [ollama:/root/.ollama]
+volumes: { pgdata: {}, ollama: {} }

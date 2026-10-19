@@ -1,0 +1,16 @@
+# Optional: free REST API on Render (https://render.com -> New -> Blueprint -> pick this repo).
+services:
+  - type: web
+    name: secureops-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
