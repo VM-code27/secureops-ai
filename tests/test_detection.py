@@ -108,3 +108,17 @@ def test_concurrent_writers_do_not_collide(fresh_db):
     assert not errors
     assert db.count("events") == 6 * 15
     assert db.read_events_sql("SELECT COUNT(DISTINCT event_id) AS n FROM events").n.iloc[0] == 90
+
+
+def test_retention_keeps_evidence_and_drops_old_noise(fresh_db):
+    old = T0 - timedelta(days=30)
+    noise = [dict(ts=old + timedelta(seconds=i), src_ip="10.0.0.7", dst_ip="10.0.0.8", dst_port=443, proto="tcp",
+                  conn_state="SF") for i in range(5)]
+    attack = [dict(ts=old + timedelta(minutes=10, seconds=10 * i), src_ip="10.0.0.5", dst_ip="10.0.0.9",
+                   dst_port=4848, proto="tcp", conn_state="SF") for i in range(12)]
+    pipeline.ingest(normalise(pd.DataFrame(noise + attack), "zeek_conn", "unit", "live"))
+    db.purge_live_events(days=3)                     # (ingest also runs this hourly by itself)
+    cited = {e for es in db.read_alerts().evidence for e in es}
+    left = db.read_events()
+    assert cited and cited <= set(left.event_id)     # evidence survives
+    assert "10.0.0.7" not in set(left.src_ip)         # old uncited noise is gone

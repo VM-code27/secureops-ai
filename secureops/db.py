@@ -199,20 +199,37 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_schema_ready: set = set()
+
+
 def ensure_schema():
-    metadata.create_all(engine())
+    """Create tables once per process. Safe when several services start on a fresh database at the
+    same time: if another process wins the race, retry and find the tables already there."""
+    url = _override.get("url", config.DATABASE_URL)
+    if url in _schema_ready:
+        return
+    for attempt in range(5):
+        try:
+            metadata.create_all(engine())
+            break
+        except Exception:
+            if attempt == 4:
+                raise
+            time.sleep(0.5 + attempt)
+    _schema_ready.add(url)
 
 
 def reset():
     metadata.drop_all(engine())
     metadata.create_all(engine())
+    _schema_ready.add(_override.get("url", config.DATABASE_URL))
 
 
 _held = threading.local()
 
 
 @contextmanager
-def lock(name: str = "pipeline", ttl: int = 300, wait: int = 600):
+def lock(name: str = "pipeline", ttl: int = 120, wait: int = 600):
     """Database-backed lock so only one writer runs the pipeline at a time, across processes.
     Re-entrant within a thread; expires after `ttl` seconds if its holder dies."""
     held = getattr(_held, "names", None)
@@ -223,12 +240,12 @@ def lock(name: str = "pipeline", ttl: int = 300, wait: int = 600):
         return
     ensure_schema()
     me = uuid.uuid4().hex
-    with engine().begin() as c:
-        if not c.execute(select(locks.c.name).where(locks.c.name == name)).first():
-            try:
+    try:  # create the lock row; if another process just created it, that's fine
+        with engine().begin() as c:
+            if not c.execute(select(locks.c.name).where(locks.c.name == name)).first():
                 c.execute(insert(locks).values(name=name, holder=None, until=now()))
-            except Exception:
-                pass
+    except Exception:
+        pass
     deadline = time.monotonic() + wait
     while True:
         t = now()
@@ -308,6 +325,24 @@ def write_labels(df: pd.DataFrame):
 def read_events(where: str = "", params: dict | None = None) -> pd.DataFrame:
     df = pd.read_sql_query(text(f"SELECT * FROM events {where}"), engine(), params=params or {})
     return _fix_ts(df, ["ts"])
+
+
+def purge_live_events(days: float) -> int:
+    """Delete live (sensor) events older than `days`, except events cited as alert evidence."""
+    cutoff = py(now() - timedelta(days=days))
+    with engine().connect() as c:
+        old = [r[0] for r in c.execute(select(events.c.event_id).where(events.c.dataset == "live",
+                                                                      events.c.ts < cutoff))]
+        if not old:
+            return 0
+        cited = set()
+        for (ev,) in c.execute(select(alerts.c.evidence).where(alerts.c.dataset == "live")):
+            cited.update(json.loads(ev or "[]"))
+    doomed = [i for i in old if i not in cited]
+    with engine().begin() as c:
+        for i in range(0, len(doomed), 900):
+            c.execute(delete(events).where(events.c.event_id.in_(doomed[i:i + 900])))
+    return len(doomed)
 
 
 def read_events_sql(sql: str, params: dict | None = None) -> pd.DataFrame:

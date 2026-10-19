@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import altair as alt
 import pandas as pd
@@ -147,11 +148,22 @@ def sensor_status() -> pd.DataFrame:
 
 # --------------------------------------------------------------- first start
 if not bootstrap.initialized():
-    with st.status("First start: building SecureOps AI from live sources (about a minute)...", expanded=True) as _s:
-        built = bootstrap.run(progress=_s.write, force=st.session_state.pop("force_rebuild", False))
-        _s.update(label="Ready" if built else "Another session is building - refresh in a minute", state="complete")
-    if not bootstrap.initialized():
+    # The build runs in a server-side thread, so refreshing or closing this tab never interrupts it.
+    bootstrap.start_background()
+    bs = bootstrap.status()
+    st.markdown(f"<div class='brand' style='margin-top:1rem'>{LOGO}<div><b>SecureOps AI</b><br>"
+                f"<span>First start - building from live sources</span></div></div>", unsafe_allow_html=True)
+    if bs["error"]:
+        st.error(f"The first-start build failed: {bs['error']}")
+        if st.button("Retry", type="primary"):
+            bootstrap.retry()
+            st.rerun()
         st.stop()
+    with st.status("Downloading real data and live threat intelligence (about 1-2 minutes)...", expanded=True):
+        for line in bs["log"] or ["Starting..."]:
+            st.write(line)
+    st.caption("This happens once. The page refreshes by itself - you can also close it and come back.")
+    time.sleep(2)
     st.rerun()
 
 if "_goto" in st.session_state:

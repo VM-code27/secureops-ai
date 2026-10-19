@@ -22,6 +22,11 @@ detection:
 correlation:
   gap_minutes: 120
 
+retention:
+  # Sensor events older than this are deleted (events cited as evidence in an alert are kept),
+  # so a busy network cannot fill a small free database.
+  live_event_days: 3
+
 scoring:
   weights: {threat: 0.45, asset: 0.25, exposure: 0.20, spread: 0.10}
   bands: {Critical: 80, High: 60, Medium: 40}

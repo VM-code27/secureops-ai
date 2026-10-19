@@ -2,14 +2,14 @@
 
 Run:  uvicorn api.main:app --reload     ->  http://localhost:8000/docs
 
-Reads are public. Every call that changes data (sensor ingest, case updates, inventory,
-replay control) needs the header `X-API-Token: $SECUREOPS_API_TOKEN`.
+Private by default: every endpoint except GET /health needs the header
+`X-API-Token: $SECUREOPS_API_TOKEN` (incidents contain your network's addresses). Serve it over HTTPS only.
 """
 from __future__ import annotations
 
+import hmac
 import io
 import json
-import threading
 from contextlib import asynccontextmanager
 from typing import Literal
 
@@ -24,9 +24,9 @@ from secureops.sources import replay, suricata, zeek
 
 @asynccontextmanager
 async def lifespan(_app):
+    # The API only ingests and serves data. The heavy first-start build (dataset replay) is done by
+    # the dashboard, so the API fits a small free instance and both never build at once.
     db.ensure_schema()
-    if not bootstrap.initialized():  # build in the background so /health answers immediately
-        threading.Thread(target=bootstrap.run, daemon=True).start()
     yield
 
 
@@ -37,8 +37,8 @@ app = FastAPI(title="SecureOps AI", version=__version__, lifespan=lifespan,
 
 def require_token(x_api_token: str = Header(default="")):
     if not config.API_TOKEN:
-        raise HTTPException(403, "Write access is disabled: set SECUREOPS_API_TOKEN on the server.")
-    if x_api_token != config.API_TOKEN:
+        raise HTTPException(403, "API disabled: set SECUREOPS_API_TOKEN on the server.")
+    if not hmac.compare_digest(x_api_token.encode(), config.API_TOKEN.encode()):
         raise HTTPException(401, "Missing or wrong X-API-Token header.")
 
 
@@ -60,13 +60,18 @@ class CaseUpdate(BaseModel):
 # ------------------------------------------------------------------ status
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": __version__, "initialized": bootstrap.initialized(),
-            "database": db.engine().dialect.name, "events": db.count("events"), "replay": replay.state(),
+    """Public liveness check - deliberately reveals nothing about your network."""
+    return {"status": "ok", "version": __version__, "initialized": bootstrap.initialized()}
+
+
+@app.get("/status", dependencies=[Depends(require_token)])
+def status():
+    return {"database": db.engine().dialect.name, "events": db.count("events"), "replay": replay.state(),
             "intel": {k: {"count": v.get("count"), "fetched_at": v.get("fetched_at")} for k, v in feeds.status().items()}}
 
 
 # ------------------------------------------------------------------ incidents
-@app.get("/incidents")
+@app.get("/incidents", dependencies=[Depends(require_token)])
 def incidents(status: str | None = None, severity: str | None = None, limit: int = 100):
     df = db.list_incidents()
     if status:
@@ -78,7 +83,7 @@ def incidents(status: str | None = None, severity: str | None = None, limit: int
     return _json(df[cols].head(limit))
 
 
-@app.get("/incidents/{incident_id}")
+@app.get("/incidents/{incident_id}", dependencies=[Depends(require_token)])
 def incident(incident_id: str):
     inc = db.get_incident(incident_id)
     if not inc:
@@ -86,12 +91,12 @@ def incident(incident_id: str):
     return _public(inc)
 
 
-@app.get("/incidents/{incident_id}/alerts")
+@app.get("/incidents/{incident_id}/alerts", dependencies=[Depends(require_token)])
 def incident_alerts(incident_id: str):
     return _json(db.read_alerts(incident_id))
 
 
-@app.get("/incidents/{incident_id}/audit")
+@app.get("/incidents/{incident_id}/audit", dependencies=[Depends(require_token)])
 def incident_audit(incident_id: str):
     return _json(db.read_audit(incident_id))
 
@@ -133,7 +138,7 @@ async def ingest_suricata(request: Request, sensor: str = "sensor"):
 
 
 # ------------------------------------------------------------------ replay / intel / assets
-@app.get("/replay")
+@app.get("/replay", dependencies=[Depends(require_token)])
 def replay_state():
     return replay.state()
 
@@ -143,7 +148,7 @@ def replay_step(minutes: int | None = None):
     return json.loads(json.dumps(replay.step(minutes), default=str))
 
 
-@app.get("/intel/status")
+@app.get("/intel/status", dependencies=[Depends(require_token)])
 def intel_status():
     return {"feeds": feeds.status(), "kev": db.get_meta("kev_status"), "indicators": len(feeds.index())}
 
@@ -153,7 +158,7 @@ def intel_refresh():
     return feeds.refresh(force=True)
 
 
-@app.get("/assets")
+@app.get("/assets", dependencies=[Depends(require_token)])
 def list_assets(limit: int = 500):
     return _json(db.read_assets().sort_values("criticality", ascending=False).head(limit))
 
@@ -170,12 +175,12 @@ def lookup_cves():
     return {"cves_linked": assets.lookup_cves(), "incidents_rescored": pipeline.rescore_all()}
 
 
-@app.get("/settings")
+@app.get("/settings", dependencies=[Depends(require_token)])
 def get_settings():
     return settings.get()
 
 
-@app.get("/metrics")
+@app.get("/metrics", dependencies=[Depends(require_token)])
 def metrics():
     p = config.ROOT / "reports" / "metrics.json"
     if not p.exists():

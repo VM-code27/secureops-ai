@@ -78,7 +78,21 @@ def ingest(events: pd.DataFrame, use_llm: bool = False, software=None) -> dict:
     carry label_tactic / label_technique columns: they go to the separate labels table only.
     Serialised with a database lock: sensors, API workers and dashboard sessions may call it at once."""
     with db.lock("pipeline"):
-        return _ingest(events, use_llm, software)
+        result = _ingest(events, use_llm, software)
+        _maybe_purge()
+        return result
+
+
+def _maybe_purge():
+    """Hourly retention for sensor data (see retention.live_event_days)."""
+    last = db.get_meta("last_purge")
+    if last and pd.Timestamp(last) > db.now() - pd.Timedelta(hours=1):
+        return
+    days = (settings.get().get("retention") or {}).get("live_event_days")
+    removed = db.purge_live_events(float(days)) if days else 0
+    db.set_meta("last_purge", db.now())
+    if removed:
+        db.set_meta("last_purge_removed", removed)
 
 
 def _ingest(events: pd.DataFrame, use_llm: bool, software) -> dict:

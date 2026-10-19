@@ -9,6 +9,7 @@ import json
 import os
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 
@@ -80,9 +81,20 @@ def ship_once(state: dict) -> int:
     return sent
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+
+
+def check_url(url: str) -> None:
+    """The token and your traffic metadata travel in every request: never send them in clear text."""
+    u = urlparse(url)
+    if u.scheme != "https" and u.hostname not in LOCAL_HOSTS and os.environ.get("ALLOW_INSECURE_HTTP") != "1":
+        raise SystemExit(f"Refusing to ship logs over plain HTTP to {u.hostname}. Use an https:// API_URL.")
+
+
 def main(once: bool = False):
     if not TOKEN:
         raise SystemExit("API_TOKEN is not set")
+    check_url(API_URL)
     state = load_state()
     print(f"Shipping {LOG_DIR} -> {API_URL} as sensor '{SENSOR}'", flush=True)
     while True:

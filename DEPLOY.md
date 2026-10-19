@@ -6,7 +6,7 @@ Everything runs on free tiers with no credit card. Choose how far you want to go
 |---|---|---|
 | **1. Portfolio demo** (10 min) | Dashboard streaming real UWF Zeek data, live threat intel / NVD / KEV / EPSS / ATT&CK, log upload, case management | GitHub + Streamlit Community Cloud |
 | **2. + AI and persistence** (+5 min) | LLM explanations; cases, settings and audit trail survive restarts | + Groq key + Neon Postgres |
-| **3. + Live sensor** (+20 min) | Your own Zeek/Suricata sensor streaming real traffic into the same dashboard | + Render (API) + a Linux box / Raspberry Pi / WSL2 |
+| **3. + Live sensor** (+20 min) | Your own Zeek/Suricata sensor streaming into the deployed dashboard over HTTPS, private API and dashboard | + Render (API) + Neon (shared DB) + a sensor host |
 
 > **Why not Vercel?** Vercel hosts websites and short serverless functions. This app is a long-running Python
 > process (Streamlit websockets, scikit-learn, a database, background streaming), which is exactly what Streamlit
@@ -36,31 +36,52 @@ Everything runs on free tiers with no credit card. Choose how far you want to go
 
 The Groq model is picked automatically from Groq's live model list (models get retired). To pin one, add `GROQ_MODEL = "<model id>"`.
 
-## Level 3 - Live sensor streaming real traffic
+## Level 3 - Live sensor streaming into the deployed dashboard (secure)
 
-The sensor pushes logs to the API, and the API writes them to the same Neon database the dashboard reads.
+```
+Sensor (laptop / Pi) --HTTPS + token--> API on Render --TLS--> Neon Postgres <--TLS-- Dashboard on Streamlit Cloud
+```
 
-1. **API on Render** (free): <https://render.com>, then **New → Blueprint**, then select the repo (it reads `render.yaml`).
-   - Set `DATABASE_URL` to the same Neon URL.
-   - Render generates `SECUREOPS_API_TOKEN` for you; copy it.
-   - Optionally set `GROQ_API_KEY`.
-   - Check that `https://<name>.onrender.com/health` responds. Interactive docs are at `/docs`.
-   - The free tier sleeps after 15 minutes idle. The sensor's next push wakes it, and the shipper retries automatically.
-3. **Sensor** (any Linux machine, Raspberry Pi 4/5, or WSL2 on Windows with Docker):
-   ```bash
-   git clone https://github.com/VM-code27/secureops-ai.git && cd secureops-ai/sensor
-   cp .env.example .env   # IFACE=eth0, API_URL=https://<name>.onrender.com, API_TOKEN=<token from Render>
-   docker compose up -d   # Zeek + Suricata (with ET Open rules) + log shipper
-   docker compose logs -f shipper
+The dashboard and the API must share **one** database (Level 2's Neon URL). Your sensor never talks to the
+dashboard directly. It sends logs to the API, which writes them into Neon, and the dashboard reads them from there.
+
+**Security built in**
+- The API is **private by default**. Every endpoint except `GET /health` (which returns only status and version)
+  needs the `X-API-Token` header, compared in constant time.
+- The shipper **refuses plain HTTP** to any remote host, so the token and your traffic metadata only travel over TLS.
+- Neon and Render both enforce TLS. Keep `?sslmode=require` in the database URL.
+- Secrets live only in Streamlit secrets, Render environment variables and `sensor/.env` (git-ignored). Nothing
+  goes into the repository.
+- Sensor events older than `retention.live_event_days` (default 3) are deleted automatically. Events cited as
+  evidence in an alert are kept, so the free 0.5 GB Neon tier does not fill up.
+
+**Steps**
+1. **Neon:** from Level 2 you have `postgresql://...neon.tech/neondb?sslmode=require` in the Streamlit secrets.
+2. **API on Render** (free): <https://render.com> → **New → Blueprint** → select `VM-code27/secureops-ai`. Render reads
+   `render.yaml`. When asked:
+   - `DATABASE_URL`: the **same** Neon URL.
+   - `GROQ_API_KEY`: optional.
+   - `SECUREOPS_API_TOKEN` is generated for you. Open the service → **Environment** and copy it.
+
+   Check `https://<service>.onrender.com/health` returns `{"status":"ok",...}`. The free instance sleeps after
+   15 minutes without requests; a sensor pushing every 10 seconds keeps it awake.
+3. **Make the dashboard private.** It now shows *your* network's addresses. Streamlit Cloud → your app → **Share** →
+   **Who can view this app: Only specific people** → add your email (and anyone else you choose).
+4. **Point the sensor at the API.** In `sensor/.env`:
    ```
-   New connections show up in the dashboard as `live` data within seconds. Detections, incidents, asset discovery and threat-intel matches all run on them.
-   **On Docker Desktop (Windows/macOS)** the sensor runs inside Docker's Linux VM. `IFACE=eth0` then sees the traffic of
-   your containers, not the whole Windows machine, and every container appears as one NAT address (e.g. 192.168.65.3).
-   Set `API_URL=http://host.docker.internal:8000` to reach an API running on Windows. This was tested: a 200-port
-   scan raised R-SCAN, an Nmap user-agent request raised Suricata "ET SCAN Possible Nmap User-Agent Observed"
-   (severity 1), and Docker Desktop's own control traffic to port 2376 was flagged as brute force. That is a real
-   false positive, so allow-list it from the incident page.
-4. **No Linux box?** Capture traffic with Wireshark on Windows and save it as `.pcap`. Then either run `sensor/process_pcap.sh capture.pcap` on any machine with Docker, or post the resulting `conn.log` / `eve.json` to the API (`/ingest/zeek`, `/ingest/suricata`).
+   API_URL=https://<service>.onrender.com
+   API_TOKEN=<the token from Render>
+   SENSOR_NAME=home-lab
+   ```
+   Then `cd sensor && docker compose up -d --force-recreate shipper` and watch `docker compose logs -f shipper`.
+   Within seconds the dashboard's **Live** screen shows the sensor as *streaming*.
+5. **What the sensor sees.** On Docker Desktop (Windows/macOS) it sees only container traffic inside Docker's VM.
+   To watch a real home or office network, run `sensor/` on a Raspberry Pi or Linux box connected to a router or
+   switch **mirror (SPAN) port**.
+6. **Rotate the token if it leaks.** Change `SECUREOPS_API_TOKEN` in Render, then update `sensor/.env`.
+
+**No Linux box?** Capture with Wireshark, run `sensor/process_pcap.sh capture.pcap` with `API_URL` and `API_TOKEN`
+set, and it uploads the resulting logs over HTTPS.
 
 > Only monitor networks you own or are authorised to monitor.
 

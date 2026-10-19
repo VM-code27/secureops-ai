@@ -1,0 +1,13 @@
+# Never bake local state or secrets into an image
+.git
+data/
+.streamlit/secrets.toml
+.env
+sensor/.env
+sensor/logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+SecureOps_AI_Documentation.pdf
+docs/build_documentation.py

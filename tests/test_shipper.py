@@ -46,3 +46,13 @@ def test_shipper_delivers_new_lines_once(seeded_db, tmp_path, monkeypatch):
         with open(tmp_path / "logs" / "zeek" / "conn.log", "a") as f:
             f.write((FIX / "zeek_conn.json").read_text().splitlines()[0] + "\n")
         assert shipper.ship_once(state) == 1 and db.count("events") == before + 1003
+
+
+def test_shipper_refuses_plain_http_to_remote_hosts(tmp_path, monkeypatch):
+    import pytest
+    shipper = load_shipper(tmp_path, monkeypatch)
+    shipper.check_url("https://secureops-api.onrender.com")       # fine
+    shipper.check_url("http://localhost:8000")                    # local is fine
+    shipper.check_url("http://host.docker.internal:8000")
+    with pytest.raises(SystemExit):
+        shipper.check_url("http://secureops-api.onrender.com")    # token would travel in clear text

@@ -152,7 +152,9 @@ reports/            measured results             docs/              images and P
 ## Security and privacy
 
 - **Human in the loop.** Response actions are recorded for approval and never executed automatically. Every case change is audited.
-- **Secrets stay out of code.** Keys live in git-ignored `.streamlit/secrets.toml` or the host's secret store. API writes require `SECUREOPS_API_TOKEN`.
+- **Private API.** Every endpoint except a minimal `/health` requires `SECUREOPS_API_TOKEN` (constant-time check). The sensor shipper refuses plain HTTP to remote hosts.
+- **Secrets stay out of code.** Keys live in git-ignored `.streamlit/secrets.toml`, Render environment variables or `sensor/.env`.
+- **Bounded storage.** Sensor events older than `retention.live_event_days` are purged; events cited as alert evidence are kept.
 - **LLM data flow.** With a Groq key, the evidence for a question is sent to Groq. Without one, nothing leaves the system.
 - **Monitor only networks you own** or are authorised to monitor.
 
