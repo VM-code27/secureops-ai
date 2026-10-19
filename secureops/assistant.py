@@ -26,7 +26,7 @@ from .intel import attack
 
 # Square brackets, or the full-width 【 】 some models (e.g. gpt-oss) emit natively.
 CITE_RE = re.compile(r"[\[【]([^\[\]【】]+)[\]】]")
-ID_RE = re.compile(r"^(EVT-\d+|ALR-\d+|AST-[\w.:-]+|CVE-\d{4}-\d+|ATT-T\d{4}(\.\d{3})?|PB-[\w-]+|SCR-\d+|CTX-\d+)$")
+ID_RE = re.compile(r"^(INC-\d+|STAT-\d+|EVT-\d+|ALR-\d+|AST-[\w.:-]+|CVE-\d{4}-\d+|ATT-T\d{4}(\.\d{3})?|PB-[\w-]+|SCR-\d+|CTX-\d+)$")
 
 
 # ------------------------------------------------------------------ retrieval

@@ -4,7 +4,7 @@
 
 SecureOps AI is a security operations platform that runs on **real network telemetry** and **live threat intelligence**. It detects threats, **correlates hundreds of alerts into a few incidents**, ranks them by threat × asset importance × live vulnerability exposure, explains each one with an **AI assistant whose every sentence must cite the underlying evidence**, and supports analyst-approved response with a full audit trail.
 
-![Overview](docs/overview.png)
+![Live threat stream](docs/live-stream.png)
 
 ## Nothing is hard-coded or simulated
 
@@ -18,9 +18,14 @@ SecureOps AI is a security operations platform that runs on **real network telem
 | Thresholds, weights, SLAs, team | `config.yaml` defaults, editable at runtime on the **Settings** page and stored in the database. |
 | LLM | Groq free tier, with the model **auto-selected from Groq's live model list**; or local Ollama; or an offline evidence engine. |
 
-| AI investigation with cited evidence | Live replay stream |
+**Three screens:**
+- **Live** - one real-time stream of sensor traffic plus the dataset replay, with breach banners and pop-up notifications the moment a detection becomes an incident.
+- **Overview** - KPIs, ATT&CK-tactic trends, most-targeted hosts, the incident list and measured model performance.
+- **Investigate** - ask questions in plain English ("what is happening on my network?", "explain INC-0114") and get answers built from the live data with every statement cited, next to an attack graph and the case actions.
+
+| Ask in plain English, answers cited | Overview |
 |---|---|
-| ![Investigate](docs/investigate.png) | ![Live stream](docs/live-stream.png) |
+| ![Investigate](docs/investigate.png) | ![Overview](docs/overview.png) |
 
 ## How it works
 

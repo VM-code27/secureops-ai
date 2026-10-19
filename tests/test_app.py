@@ -5,7 +5,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 APP = Path(__file__).resolve().parent.parent / "streamlit_app.py"
-PAGES = ["Overview", "Incident queue", "Investigate", "Assets", "Threat intel", "Evaluation", "Settings", "About"]
+PAGES = ["Live", "Overview", "Investigate"]
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -22,7 +22,7 @@ def test_case_update_from_dashboard(seeded_db):
     inc_id = db.list_incidents().iloc[0].incident_id
     at = AppTest.from_file(str(APP), default_timeout=120)
     at.session_state["page"] = "Investigate"
-    at.session_state["selected"] = inc_id
+    at.session_state["focus"] = inc_id
     at.run()
     owner = next(s for s in at.selectbox if s.label == "Owner")
     owner.set_value("Priya")
@@ -30,3 +30,12 @@ def test_case_update_from_dashboard(seeded_db):
     at.run()
     assert not at.exception
     assert db.get_incident(inc_id)["owner"] == "Priya"
+
+
+def test_chat_answers_with_citations(seeded_db):
+    from secureops import chat, db
+    inc_id = db.list_incidents().iloc[0].incident_id
+    r = chat.answer(f"explain {inc_id}")
+    assert r["focus"] == inc_id and r["support_rate"] == 1.0 and inc_id in r["text"]
+    r = chat.answer("what is happening right now?")
+    assert r["support_rate"] == 1.0 and any(s["id"] == "STAT-1" for s in r["sources"])

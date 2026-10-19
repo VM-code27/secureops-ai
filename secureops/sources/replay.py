@@ -66,3 +66,18 @@ def step(minutes: int | None = None, use_llm=False) -> dict:
         cursor = nxt_ev.iloc[0].floor("min")
         _save(cursor=cursor)
     return advance(cursor + pd.Timedelta(minutes=minutes), chunk=pd.Timedelta(minutes=minutes), use_llm=use_llm)
+
+
+def summary() -> dict:
+    """Replay position and dataset totals without forcing a download (safe on any page)."""
+    st = state()
+    if not st.get("cursor"):
+        return {"active": False}
+    if "total_events" not in st and (uwf._cache_dir() / "overlay.pkl").exists():
+        i = uwf.info()
+        _save(total_events=i["events"], attack_events=i["attack_events"], days=i["days"])
+        st = state()
+    start, end, cur = pd.Timestamp(st["start"]), pd.Timestamp(st["end"]), pd.Timestamp(st["cursor"])
+    return {"active": True, "cursor": cur, "start": start, "end": end,
+            "progress": max(0.0, min(1.0, (cur - start) / (end - start))), "finished": cur >= end,
+            "total_events": st.get("total_events"), "attack_events": st.get("attack_events"), "days": st.get("days")}
