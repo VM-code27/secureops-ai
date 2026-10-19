@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8a8984"/></marker>
+  </defs>
+  <rect width="1200" height="560" rx="16" fill="#ffffff"/>
+  <!-- column titles -->
+  <g font-size="13" font-weight="700" fill="#8a8984" letter-spacing="1">
+    <text x="40" y="40">SOURCES</text><text x="330" y="40">STREAMING PIPELINE</text><text x="880" y="40">ANALYST CONSOLE</text>
+  </g>
+  <!-- sources -->
+  <g>
+    <rect x="30" y="60" width="240" height="78" rx="12" fill="#eef4fc" stroke="#2a78d6"/>
+    <text x="48" y="90" font-weight="700" fill="#0b0b0b">Network sensor</text>
+    <text x="48" y="112" fill="#52514e">Zeek + Suricata → shipper</text>
+    <text x="48" y="130" fill="#8a8984" font-size="12">your network, real time</text>
+    <rect x="30" y="152" width="240" height="78" rx="12" fill="#eef4fc" stroke="#2a78d6"/>
+    <text x="48" y="182" font-weight="700" fill="#0b0b0b">Dataset replay</text>
+    <text x="48" y="204" fill="#52514e">UWF-ZeekData24 (real, labelled)</text>
+    <text x="48" y="222" fill="#8a8984" font-size="12">191k connections, 18 days</text>
+    <rect x="30" y="244" width="240" height="64" rx="12" fill="#eef4fc" stroke="#2a78d6"/>
+    <text x="48" y="272" font-weight="700" fill="#0b0b0b">Log upload / API</text>
+    <text x="48" y="292" fill="#52514e">conn.log · ssh.log · eve.json</text>
+    <rect x="30" y="340" width="240" height="190" rx="12" fill="#fdf5e3" stroke="#c98500"/>
+    <text x="48" y="368" font-weight="700" fill="#0b0b0b">Live intelligence</text>
+    <text x="48" y="392" fill="#52514e">abuse.ch Feodo · URLhaus</text>
+    <text x="48" y="414" fill="#52514e">Spamhaus DROP</text>
+    <text x="48" y="436" fill="#52514e">NVD · CISA KEV · FIRST EPSS</text>
+    <text x="48" y="458" fill="#52514e">MITRE ATT&amp;CK (STIX)</text>
+    <text x="48" y="490" fill="#8a8984" font-size="12">refreshed automatically</text>
+  </g>
+  <!-- pipeline -->
+  <g>
+    <rect x="320" y="60" width="500" height="470" rx="16" fill="#fafaf9" stroke="#e6e5e1"/>
+    <g font-weight="700" fill="#0b0b0b">
+      <rect x="345" y="80" width="450" height="52" rx="10" fill="#fff" stroke="#e6e5e1"/>
+      <text x="365" y="111">1  Normalise &amp; store</text>
+      <rect x="345" y="146" width="450" height="52" rx="10" fill="#fff" stroke="#e6e5e1"/>
+      <text x="365" y="177">2  Asset discovery</text>
+      <rect x="345" y="212" width="450" height="64" rx="10" fill="#fdeee6" stroke="#eb6834"/>
+      <text x="365" y="238">3  Detection</text>
+      <rect x="345" y="290" width="450" height="52" rx="10" fill="#fdeee6" stroke="#eb6834"/>
+      <text x="365" y="321">4  Incident correlation</text>
+      <rect x="345" y="356" width="450" height="52" rx="10" fill="#fff" stroke="#e6e5e1"/>
+      <text x="365" y="387">5  Risk scoring &amp; SLA</text>
+      <rect x="345" y="422" width="450" height="52" rx="10" fill="#e8f7f0" stroke="#1baf7a"/>
+      <text x="365" y="453">6  AI explanation + citation verifier</text>
+    </g>
+    <g fill="#52514e" font-size="12.5">
+      <text x="560" y="111">SQLite / PostgreSQL · DB-level pipeline lock</text>
+      <text x="560" y="177">services, fan-in, hubs, criticality, CPE→CVE</text>
+      <text x="365" y="260">8 ATT&amp;CK-mapped rules + Isolation Forest (per host-hour)</text>
+      <text x="560" y="321">union-find on shared entities, 120 min</text>
+      <text x="560" y="387">threat · asset · CVE (KEV/EPSS) · spread</text>
+      <text x="365" y="497">RAG over alerts, events, assets, CVEs, ATT&amp;CK, playbooks → Groq / Ollama / offline</text>
+    </g>
+  </g>
+  <!-- console -->
+  <g>
+    <rect x="870" y="60" width="300" height="110" rx="12" fill="#eef4fc" stroke="#2a78d6"/>
+    <text x="888" y="90" font-weight="700" fill="#0b0b0b">Live</text>
+    <text x="888" y="112" fill="#52514e">real-time feed, breach banner,</text>
+    <text x="888" y="132" fill="#52514e">pop-up notifications</text>
+    <rect x="870" y="186" width="300" height="110" rx="12" fill="#eef4fc" stroke="#2a78d6"/>
+    <text x="888" y="216" font-weight="700" fill="#0b0b0b">Overview</text>
+    <text x="888" y="238" fill="#52514e">KPIs, trends, incident list,</text>
+    <text x="888" y="258" fill="#52514e">measured model performance</text>
+    <rect x="870" y="312" width="300" height="110" rx="12" fill="#e8f7f0" stroke="#1baf7a"/>
+    <text x="888" y="342" font-weight="700" fill="#0b0b0b">Investigate</text>
+    <text x="888" y="364" fill="#52514e">plain-English chat with cited</text>
+    <text x="888" y="384" fill="#52514e">answers, attack graph, case actions</text>
+    <rect x="870" y="438" width="300" height="92" rx="12" fill="#fafaf9" stroke="#e6e5e1"/>
+    <text x="888" y="468" font-weight="700" fill="#0b0b0b">REST API (FastAPI)</text>
+    <text x="888" y="490" fill="#52514e">sensor ingest, cases, assets</text>
+    <text x="888" y="510" fill="#52514e">token-protected writes</text>
+  </g>
+  <!-- arrows -->
+  <g stroke="#8a8984" stroke-width="2" fill="none">
+    <path d="M270 99 H296 M270 191 H296 M270 276 H296 M296 99 V276"/>
+    <path d="M296 106 H338" marker-end="url(#ar)"/>
+    <path d="M270 430 H306 V244"/>
+    <path d="M306 244 H338" marker-end="url(#ar)"/>
+    <path d="M306 382 H338" marker-end="url(#ar)"/>
+    <path d="M306 382 V430"/>
+    <path d="M820 241 H846 M846 115 V367"/>
+    <path d="M846 115 H863" marker-end="url(#ar)"/>
+    <path d="M846 241 H863" marker-end="url(#ar)"/>
+    <path d="M846 367 H863" marker-end="url(#ar)"/>
+    <path d="M822 484 H863" marker-end="url(#ar)" marker-start="url(#ar2)"/>
+  </g>
+  <defs><marker id="ar2" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M10 0L0 5L10 10z" fill="#8a8984"/></marker></defs>
+</svg>
