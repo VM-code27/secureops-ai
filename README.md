@@ -15,7 +15,7 @@
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.146-1baf7a?logo=fastapi&logoColor=white">
   <img alt="scikit-learn" src="https://img.shields.io/badge/scikit--learn-Isolation%20Forest-c98500?logo=scikitlearn&logoColor=white">
   <img alt="Zeek and Suricata" src="https://img.shields.io/badge/sensors-Zeek%20%7C%20Suricata-6250d6">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-21%20passing-1baf7a">
+  <a href="https://github.com/VM-code27/secureops-ai/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/VM-code27/secureops-ai/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 ---
@@ -83,7 +83,7 @@ The full 18-day [UWF-ZeekData24](https://datasets.uwf.edu) replay runs through t
 ## Quick start
 
 ```bash
-git clone https://github.com/<you>/secureops-ai.git && cd secureops-ai
+git clone https://github.com/VM-code27/secureops-ai.git && cd secureops-ai
 pip install -r requirements.txt
 streamlit run streamlit_app.py        # http://localhost:8501 - first start pulls live data (~1 min)
 ```

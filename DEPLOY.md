@@ -16,7 +16,7 @@ Everything runs on free tiers with no credit card. Choose how far you want to go
 
 1. Push the repo to GitHub:
    ```bash
-   git remote add origin https://github.com/<you>/secureops-ai.git
+   git remote add origin https://github.com/VM-code27/secureops-ai.git
    git push -u origin main
    ```
 2. Go to <https://share.streamlit.io>, then **Create app → Deploy a public app from GitHub**. Choose your repo, branch `main` and main file `streamlit_app.py`.
@@ -48,7 +48,7 @@ The sensor pushes logs to the API, and the API writes them to the same Neon data
    - The free tier sleeps after 15 minutes idle. The sensor's next push wakes it, and the shipper retries automatically.
 3. **Sensor** (any Linux machine, Raspberry Pi 4/5, or WSL2 on Windows with Docker):
    ```bash
-   git clone https://github.com/<you>/secureops-ai.git && cd secureops-ai/sensor
+   git clone https://github.com/VM-code27/secureops-ai.git && cd secureops-ai/sensor
    cp .env.example .env   # IFACE=eth0, API_URL=https://<name>.onrender.com, API_TOKEN=<token from Render>
    docker compose up -d   # Zeek + Suricata (with ET Open rules) + log shipper
    docker compose logs -f shipper
